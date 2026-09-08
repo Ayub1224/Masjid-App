@@ -1,0 +1,1340 @@
+'use client';
+/* oxlint-disable next/no-img-element -- User-selected data URLs must remain local previews, without an image optimizer. */
+import Link from 'next/link';
+import { useState } from 'react';
+import {
+  Users,
+  Plus,
+  ArrowRight,
+  ClipboardCheck,
+  Wallet,
+  Landmark,
+  Copy,
+  Share2,
+  ShieldCheck,
+  Check,
+  FileImage,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { DataTable } from '@/components/app/data-table';
+import {
+  PageTitle,
+  Panel,
+  Disclosure,
+  Field,
+  Form,
+  Choice,
+  Modal,
+  Status,
+  Feedback,
+  value,
+} from '@/components/app/primitives';
+import { useDemoAction, useDemoRole } from '@/components/app/providers';
+import {
+  balances,
+  money,
+  parseAmount,
+  validateDate,
+  can,
+  permissions,
+  permissionLabels,
+  type DemoState,
+  type Member,
+  type Payment,
+  type Expense,
+  type Permission,
+} from '@/lib/data/domain';
+import type { ColumnDef } from '@tanstack/react-table';
+import { readImage } from '@/features/mosque/contributions';
+export function AdminOverview({ data }: { data: DemoState }) {
+  const b = balances(data);
+  const pending = data.payments.filter((p) => p.status === 'pending');
+  const { role } = useDemoRole();
+  const grants = data.members.find((m) => m.id === 'a1')?.permissions;
+  return (
+    <>
+      <PageTitle
+        title="Assalamu alaikum"
+        description="A little care for your mosque, every day."
+      />
+      <div className="space-y-6">
+        {can(role, 'verify', grants) && (
+          <div className="flex flex-wrap items-center justify-between gap-5 rounded-2xl bg-primary p-6 text-primary-foreground">
+            <div className="flex gap-4">
+              <ClipboardCheck className="mt-1 size-6 opacity-80" />
+              <div>
+                <p className="text-xl font-medium">
+                  {pending.length
+                    ? `${pending.length} payment${pending.length === 1 ? '' : 's'} to review`
+                    : 'All caught up'}
+                </p>
+                <p className="mt-1 text-sm opacity-75">
+                  {pending.length
+                    ? 'A member is waiting for verification.'
+                    : 'No contributions are waiting for verification.'}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="secondary"
+              className="h-11"
+              render={<Link href="/admin/payments" />}
+            >
+              Review payments
+              <ArrowRight />
+            </Button>
+          </div>
+        )}
+        <div className="grid gap-4 sm:grid-cols-3">
+          {[
+            ['Recorded total', b.total, Wallet],
+            ['Bank', b.bank, Landmark],
+            ['Cash', b.cash, Wallet],
+          ].map(([label, amount, Icon]) => {
+            const I = Icon as typeof Wallet;
+            return (
+              <Panel key={String(label)}>
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>{String(label)}</span>
+                  <I className="size-4" />
+                </div>
+                <p className="mt-3 text-3xl font-medium tabular-nums">
+                  {money(Number(amount))}
+                </p>
+              </Panel>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {can(role, 'members', grants) && (
+            <Button
+              variant="outline"
+              className="h-12"
+              render={<Link href="/admin/members" />}
+            >
+              <Users />
+              Manage members
+            </Button>
+          )}
+          {can(role, 'record', grants) && (
+            <Button
+              variant="outline"
+              className="h-12"
+              render={<Link href="/admin/cash" />}
+            >
+              <Plus />
+              Record cash
+            </Button>
+          )}
+          {can(role, 'expenses', grants) && (
+            <Button
+              variant="outline"
+              className="h-12"
+              render={<Link href="/admin/balance" />}
+            >
+              <Landmark />
+              Check bank balance
+            </Button>
+          )}
+        </div>
+        <Disclosure title="Recent activity">
+          {data.audit.length ? (
+            <ul className="space-y-3">
+              {data.audit.slice(0, 10).map((entry, i) => (
+                <li
+                  key={i}
+                  className="break-words text-sm text-muted-foreground"
+                >
+                  {entry}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground">
+              No changes in this demo session yet.
+            </p>
+          )}
+        </Disclosure>
+        <p className="text-xs text-muted-foreground">
+          Sample opening balance: 1 September 2026. Bank figures are recorded,
+          not live.
+        </p>
+      </div>
+    </>
+  );
+}
+export function Members({
+  data,
+  administrators = false,
+}: {
+  data: DemoState;
+  administrators?: boolean;
+}) {
+  const action = useDemoAction();
+  const [open, setOpen] = useState(false),
+    [created, setCreated] = useState(''),
+    [editing, setEditing] = useState<Member | null>(null),
+    [notice, setNotice] = useState('');
+  const rows = data.members.filter((m) =>
+    administrators ? m.role !== 'member' : m.role === 'member',
+  );
+  async function change(id: string, status: 'inactive' | 'invited') {
+    try {
+      await action.mutateAsync({ type: 'member-status', id, status });
+      setNotice(
+        status === 'inactive'
+          ? 'Access deactivated in demo.'
+          : 'A new demo invitation is ready.',
+      );
+    } catch (e) {
+      setNotice((e as Error).message);
+    }
+  }
+  const cols: ColumnDef<Member, unknown>[] = [
+    {
+      accessorKey: 'name',
+      header: 'Name',
+      cell: ({ row }) => (
+        <div>
+          <p className="font-medium">{row.original.name}</p>
+          <p className="text-xs text-muted-foreground">{row.original.email}</p>
+        </div>
+      ),
+    },
+    {
+      accessorKey: administrators ? 'role' : 'address',
+      header: administrators ? 'Role' : 'Address',
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => <Status status={row.original.status} />,
+    },
+    {
+      id: 'actions',
+      header: '',
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="flex gap-2">
+          {administrators && row.original.role === 'admin' && (
+            <Button
+              variant="ghost"
+              className="h-11"
+              onClick={() => setEditing(row.original)}
+            >
+              Permissions
+            </Button>
+          )}
+          {row.original.role !== 'owner' && (
+            <Button
+              variant="ghost"
+              className="h-11"
+              onClick={() =>
+                change(
+                  row.original.id,
+                  row.original.status === 'inactive' ? 'invited' : 'inactive',
+                )
+              }
+            >
+              {row.original.status === 'inactive'
+                ? 'Reinvite'
+                : row.original.status === 'invited'
+                  ? 'Revoke'
+                  : 'Deactivate'}
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ];
+  const [seatTime] = useState(() => Date.now());
+  const occupied = rows.filter(
+    (m) => m.status !== 'inactive' && (!m.expiresAt || m.expiresAt > seatTime),
+  ).length;
+  return (
+    <>
+      <PageTitle
+        title={administrators ? 'Administrators' : 'Members'}
+        description={
+          administrators
+            ? 'One owner. Four admins. Permissions stay in your hands.'
+            : 'Your local community, one person at a time.'
+        }
+        action={
+          <Button
+            className="h-11"
+            disabled={administrators && occupied >= 5}
+            onClick={() => {
+              setOpen(true);
+              setCreated('');
+            }}
+          >
+            <Plus />
+            {administrators ? 'Add administrator' : 'Add member'}
+          </Button>
+        }
+      />
+      {administrators && (
+        <div className="mb-6 grid gap-4 sm:grid-cols-2">
+          <Panel>
+            <ShieldCheck className="mb-3 size-5 text-primary" />
+            <p className="font-medium">Owner seat</p>
+            <p className="text-sm text-muted-foreground">
+              {rows.some((m) => m.role === 'owner' && m.status !== 'inactive')
+                ? '1 of 1 occupied'
+                : 'Available'}
+            </p>
+          </Panel>
+          <Panel>
+            <Users className="mb-3 size-5 text-primary" />
+            <p className="font-medium">Admin seats</p>
+            <p className="text-sm text-muted-foreground">
+              {
+                rows.filter(
+                  (m) =>
+                    m.role === 'admin' &&
+                    m.status !== 'inactive' &&
+                    (!m.expiresAt || m.expiresAt > seatTime),
+                ).length
+              }{' '}
+              of 4 occupied · pending invites reserve a seat
+            </p>
+          </Panel>
+        </div>
+      )}
+      <Feedback message={notice} />
+      <DataTable
+        data={rows}
+        columns={cols}
+        searchLabel={
+          administrators ? 'Search administrators' : 'Search members'
+        }
+      />
+      <Modal
+        open={open}
+        onOpenChange={setOpen}
+        title={
+          created
+            ? 'Invitation ready'
+            : administrators
+              ? 'Add administrator'
+              : 'Add member'
+        }
+        description="Frontend demo only. No real invitation or account is created."
+      >
+        {created ? (
+          <InviteResult id={created} />
+        ) : (
+          <InvitationForm
+            data={data}
+            administrators={administrators}
+            onCreated={setCreated}
+          />
+        )}
+      </Modal>
+      <Modal
+        open={!!editing}
+        onOpenChange={(v) => {
+          if (!v) setEditing(null);
+        }}
+        title="Admin permissions"
+      >
+        {editing && (
+          <PermissionEditor member={editing} onDone={() => setEditing(null)} />
+        )}
+      </Modal>
+    </>
+  );
+}
+function InvitationForm({
+  data,
+  administrators,
+  onCreated,
+}: {
+  data: DemoState;
+  administrators: boolean;
+  onCreated: (id: string) => void;
+}) {
+  const action = useDemoAction();
+  const [grants, setGrants] = useState<Permission[]>([...permissions]);
+  return (
+    <Form
+      submit="Create demo invitation"
+      onSubmit={async (f) => {
+        const r = await action.mutateAsync({
+          type: 'invite',
+          member: {
+            name: value(f, 'name'),
+            email: value(f, 'email'),
+            phone: value(f, 'phone'),
+            address: value(f, 'address'),
+            role: administrators
+              ? (value(f, 'role') as 'admin' | 'owner')
+              : 'member',
+            permissions: administrators ? grants : [],
+          },
+        });
+        onCreated(r.id);
+      }}
+    >
+      <Field
+        name="name"
+        label="Full name"
+        required
+        maxLength={100}
+        placeholder="Sample name"
+      />
+      <Field
+        name="email"
+        label="Email address"
+        required
+        type="email"
+        placeholder="member@example.com"
+      />
+      <Field
+        name="phone"
+        label="Phone number (optional)"
+        type="tel"
+        maxLength={20}
+      />
+      <Field name="address" label="Address (optional)" maxLength={250} />
+      {administrators && (
+        <>
+          <Field name="role" label="Role">
+            <Choice name="role" defaultValue="admin">
+              <option value="admin">Admin</option>
+              <option
+                value="owner"
+                disabled={data.members.some(
+                  (m) => m.role === 'owner' && m.status !== 'inactive',
+                )}
+              >
+                Owner{' '}
+                {data.members.some(
+                  (m) => m.role === 'owner' && m.status !== 'inactive',
+                )
+                  ? '— seat occupied'
+                  : ''}
+              </option>
+            </Choice>
+          </Field>
+          <Disclosure title="Permissions">
+            <PermissionSwitches grants={grants} onChange={setGrants} />
+          </Disclosure>
+          <p className="text-xs text-muted-foreground">
+            Admin accounts will require verified email and an authenticator.
+            Only the owner can reverse financial entries.
+          </p>
+        </>
+      )}
+    </Form>
+  );
+}
+function PermissionSwitches({
+  grants,
+  onChange,
+}: {
+  grants: Permission[];
+  onChange: (p: Permission[]) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      {permissions.map((p) => (
+        <label
+          key={p}
+          htmlFor={`grant-${p}`}
+          className="flex min-h-12 items-center justify-between gap-4"
+        >
+          <span>{permissionLabels[p]}</span>
+          <Switch
+            id={`grant-${p}`}
+            checked={grants.includes(p)}
+            onCheckedChange={(checked) =>
+              onChange(checked ? [...grants, p] : grants.filter((g) => g !== p))
+            }
+          />
+        </label>
+      ))}
+    </div>
+  );
+}
+function PermissionEditor({
+  member,
+  onDone,
+}: {
+  member: Member;
+  onDone: () => void;
+}) {
+  const [grants, setGrants] = useState(member.permissions);
+  const action = useDemoAction();
+  return (
+    <Form
+      submit="Save permissions"
+      onSubmit={async () => {
+        await action.mutateAsync({
+          type: 'permissions',
+          id: member.id,
+          permissions: grants,
+        });
+        onDone();
+      }}
+    >
+      <PermissionSwitches grants={grants} onChange={setGrants} />
+    </Form>
+  );
+}
+function InviteResult({ id }: { id: string }) {
+  const [notice, setNotice] = useState('');
+  const url =
+    typeof window === 'undefined'
+      ? ''
+      : `${window.location.origin}/invite?demo=${id}`;
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setNotice('Demo link copied.');
+    } catch {
+      setNotice('Select and copy the link below.');
+    }
+  }
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-3 text-success">
+        <Check />
+        Demo invitation prepared
+      </div>
+      <Input
+        readOnly
+        aria-label="Demo invitation link"
+        value={url}
+        className="h-12"
+      />
+      <div className="flex gap-3">
+        <Button className="h-11 flex-1" onClick={copy}>
+          <Copy />
+          Copy link
+        </Button>
+        <Button
+          variant="outline"
+          className="h-11 flex-1"
+          onClick={async () => {
+            try {
+              if (navigator.share)
+                await navigator.share({
+                  title: 'Demo mosque invitation',
+                  text: 'Frontend preview only — this does not activate a real membership.',
+                  url,
+                });
+              else await copy();
+            } catch {
+              setNotice('Sharing cancelled or unavailable.');
+            }
+          }}
+        >
+          <Share2 />
+          Share
+        </Button>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Production invitations will expire after 48 hours. This link opens a
+        demonstration; it is not an authentication token.
+      </p>
+      <Feedback message={notice} />
+    </div>
+  );
+}
+export function Payments({ data }: { data: DemoState }) {
+  const { role } = useDemoRole();
+  const action = useDemoAction();
+  const [selected, setSelected] = useState<Payment | null>(null),
+    [filter, setFilter] = useState('pending'),
+    [reject, setReject] = useState(false),
+    [message, setMessage] = useState('');
+  const p = selected
+    ? data.payments.find((p) => p.id === selected.id)
+    : undefined;
+  const columns: ColumnDef<Payment, unknown>[] = [
+    {
+      id: 'member',
+      accessorFn: (p) =>
+        data.members.find((m) => m.id === p.memberId)?.name ?? 'Member',
+      header: 'Member',
+    },
+    {
+      accessorKey: 'amount',
+      header: 'Amount',
+      cell: ({ row }) => money(row.original.amount),
+    },
+    { accessorKey: 'date', header: 'Date' },
+    { accessorKey: 'method', header: 'Method' },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => <Status status={row.original.status} />,
+    },
+    {
+      id: 'review',
+      header: '',
+      cell: ({ row }) => (
+        <Button
+          variant="outline"
+          className="h-11"
+          onClick={() => {
+            setSelected(row.original);
+            setReject(false);
+            setMessage('');
+          }}
+        >
+          View
+          <ArrowRight className="size-3" />
+        </Button>
+      ),
+    },
+  ];
+  return (
+    <>
+      <PageTitle
+        title="Payments"
+        description="Verify received money before adding it to the register."
+      />
+      <div className="mb-5 flex gap-2">
+        {['pending', 'all'].map((f) => (
+          <Button
+            key={f}
+            variant={filter === f ? 'default' : 'outline'}
+            className="h-11"
+            onClick={() => setFilter(f)}
+          >
+            {f === 'pending' ? 'Awaiting review' : 'All payments'}
+          </Button>
+        ))}
+      </div>
+      <DataTable
+        data={data.payments.filter(
+          (p) => filter === 'all' || p.status === 'pending',
+        )}
+        columns={columns}
+      />
+      <Modal
+        open={!!p}
+        onOpenChange={(open) => {
+          if (!open) setSelected(null);
+        }}
+        title="Payment review"
+        description="Demo only. Check actual incoming transactions in the live app."
+      >
+        {p && (
+          <>
+            <div className="flex items-center justify-between">
+              <span className="text-3xl font-medium">{money(p.amount)}</span>
+              <Status status={p.status} />
+            </div>
+            <p>{data.members.find((m) => m.id === p.memberId)?.name}</p>
+            <p className="text-sm text-muted-foreground">
+              {p.date} · {p.purpose} · {p.method}
+            </p>
+            <p className="break-all text-sm">
+              Reference: {p.reference || 'Cash'}
+            </p>
+            {p.evidence ? (
+              <img
+                alt="Submitted screenshot"
+                src={p.evidence}
+                className="max-h-60 w-full rounded-lg object-contain"
+              />
+            ) : (
+              <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted text-muted-foreground">
+                <FileImage />
+                <span className="text-sm">
+                  Sample record · no actual screenshot
+                </span>
+              </div>
+            )}
+            {p.reason && <Feedback message={p.reason} error />}
+            {p.status === 'pending' && (
+              <>
+                {reject ? (
+                  <Form
+                    submit="Reject submission"
+                    onSubmit={async (f) => {
+                      await action.mutateAsync({
+                        type: 'review',
+                        id: p.id,
+                        status: 'rejected',
+                        reason: value(f, 'reason'),
+                      });
+                      setSelected(null);
+                    }}
+                  >
+                    <Field
+                      name="reason"
+                      label="Reason for rejection"
+                      required
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-11"
+                      onClick={() => setReject(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </Form>
+                ) : (
+                  <>
+                    <Button
+                      className="h-12"
+                      disabled={action.isPending}
+                      onClick={async () => {
+                        try {
+                          await action.mutateAsync({
+                            type: 'review',
+                            id: p.id,
+                            status: 'verified',
+                          });
+                          setSelected(null);
+                        } catch (e) {
+                          setMessage((e as Error).message);
+                        }
+                      }}
+                    >
+                      Verify received payment
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      className="h-11"
+                      onClick={() => setReject(true)}
+                    >
+                      Reject submission
+                    </Button>
+                  </>
+                )}
+              </>
+            )}
+            {role === 'owner' && p.status === 'verified' && (
+              <Disclosure title="Reverse this entry">
+                <Form
+                  submit="Reverse with history preserved"
+                  onSubmit={async (f) => {
+                    await action.mutateAsync({
+                      type: 'reverse',
+                      kind: 'payment',
+                      id: p.id,
+                      reason: value(f, 'reason'),
+                    });
+                    setSelected(null);
+                  }}
+                >
+                  <Field name="reason" label="Correction reason" required />
+                </Form>
+              </Disclosure>
+            )}
+            <Feedback message={message} error />
+          </>
+        )}
+      </Modal>
+    </>
+  );
+}
+export function Cash({ data }: { data: DemoState }) {
+  const action = useDemoAction();
+  const [saved, setSaved] = useState(false);
+  return (
+    <div className="max-w-xl">
+      <PageTitle
+        title="Record cash"
+        description="For contributions received in person."
+      />
+      {saved ? (
+        <Panel>
+          <Feedback message="Cash contribution added to the sample register." />
+          <Button className="mt-5 h-12" onClick={() => setSaved(false)}>
+            Record another
+          </Button>
+        </Panel>
+      ) : (
+        <Panel>
+          <Form
+            submit="Save cash contribution"
+            onSubmit={async (f) => {
+              validateDate(value(f, 'date'));
+              await action.mutateAsync({
+                type: 'cash',
+                payment: {
+                  memberId: value(f, 'member'),
+                  amount: parseAmount(value(f, 'amount')),
+                  date: value(f, 'date'),
+                  purpose: value(f, 'purpose'),
+                },
+              });
+              setSaved(true);
+            }}
+          >
+            <Field name="member" label="Member">
+              <Choice name="member" required>
+                {data.members
+                  .filter((m) => m.status !== 'inactive')
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+              </Choice>
+            </Field>
+            <Field
+              name="amount"
+              label="Amount (₹)"
+              inputMode="decimal"
+              required
+              placeholder="0.00"
+            />
+            <Field
+              name="date"
+              label="Received date"
+              type="date"
+              defaultValue="2026-09-08"
+              required
+            />
+            <Field name="purpose" label="Purpose">
+              <Choice name="purpose">
+                <option>General support</option>
+                <option>Special occasion</option>
+              </Choice>
+            </Field>
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Wallet className="size-4" />
+              Cash · Collector recorded as your demo role
+            </p>
+          </Form>
+        </Panel>
+      )}
+    </div>
+  );
+}
+export function Expenses({ data }: { data: DemoState }) {
+  const action = useDemoAction();
+  const { role } = useDemoRole();
+  const [open, setOpen] = useState(false),
+    [reverse, setReverse] = useState<Expense | null>(null),
+    [notice, setNotice] = useState('');
+  const columns: ColumnDef<Expense, unknown>[] = [
+    { accessorKey: 'description', header: 'Description' },
+    {
+      accessorKey: 'amount',
+      header: 'Amount',
+      cell: ({ row }) => money(row.original.amount),
+    },
+    { accessorKey: 'category', header: 'Category' },
+    { accessorKey: 'account', header: 'Account' },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => <Status status={row.original.status} />,
+    },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) =>
+        row.original.status === 'draft' ? (
+          <Button
+            className="h-11"
+            variant="outline"
+            onClick={async () => {
+              try {
+                await action.mutateAsync({
+                  type: 'post-expense',
+                  id: row.original.id,
+                });
+              } catch (e) {
+                setNotice((e as Error).message);
+              }
+            }}
+          >
+            Mark paid
+          </Button>
+        ) : role === 'owner' && row.original.status === 'paid' ? (
+          <Button
+            variant="ghost"
+            className="h-11"
+            onClick={() => setReverse(row.original)}
+          >
+            Reverse
+          </Button>
+        ) : null,
+    },
+  ];
+  return (
+    <>
+      <PageTitle
+        title="Expenses"
+        action={
+          <Button className="h-11" onClick={() => setOpen(true)}>
+            <Plus />
+            Add expense
+          </Button>
+        }
+      />
+      <Feedback message={notice} error />
+      <DataTable data={data.expenses} columns={columns} />
+      <Modal open={open} onOpenChange={setOpen} title="Add expense">
+        <Form
+          submit="Save expense"
+          onSubmit={async (f) => {
+            validateDate(value(f, 'date'));
+            await action.mutateAsync({
+              type: 'expense',
+              expense: {
+                amount: parseAmount(value(f, 'amount')),
+                date: value(f, 'date'),
+                category: value(f, 'category'),
+                description: value(f, 'description'),
+                account: value(f, 'account') as 'Bank' | 'Cash',
+                status: value(f, 'status') as 'draft' | 'paid',
+              },
+            });
+            setOpen(false);
+          }}
+        >
+          <Field
+            name="description"
+            label="Description"
+            required
+            maxLength={200}
+          />
+          <Field
+            name="amount"
+            label="Amount (₹)"
+            inputMode="decimal"
+            required
+          />
+          <Field
+            name="date"
+            label="Date"
+            type="date"
+            defaultValue="2026-09-08"
+            required
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <Field name="category" label="Category">
+              <Choice name="category">
+                {['Utilities', 'Maintenance', 'Cleaning', 'Other'].map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+              </Choice>
+            </Field>
+            <Field name="account" label="Paid from">
+              <Choice name="account">
+                <option>Bank</option>
+                <option>Cash</option>
+              </Choice>
+            </Field>
+          </div>
+          <Field name="status" label="Status">
+            <Choice name="status">
+              <option value="draft">Draft — not yet paid</option>
+              <option value="paid">Paid</option>
+            </Choice>
+          </Field>
+        </Form>
+      </Modal>
+      <Modal
+        open={!!reverse}
+        onOpenChange={(o) => {
+          if (!o) setReverse(null);
+        }}
+        title="Reverse expense"
+      >
+        <Form
+          submit="Reverse with history preserved"
+          onSubmit={async (f) => {
+            if (reverse)
+              await action.mutateAsync({
+                type: 'reverse',
+                kind: 'expense',
+                id: reverse.id,
+                reason: value(f, 'reason'),
+              });
+            setReverse(null);
+          }}
+        >
+          <Field name="reason" label="Correction reason" required />
+        </Form>
+      </Modal>
+    </>
+  );
+}
+export function Balance({ data }: { data: DemoState }) {
+  const action = useDemoAction();
+  const b = balances(data);
+  const [notice, setNotice] = useState('');
+  return (
+    <>
+      <PageTitle
+        title="Bank balance check"
+        description="Compare an observation with your recorded balance."
+      />
+      <div className="grid items-start gap-6 xl:grid-cols-2">
+        <Panel>
+          <p className="text-sm text-muted-foreground">Recorded bank balance</p>
+          <p className="mb-6 mt-2 text-4xl font-medium">{money(b.bank)}</p>
+          <Form
+            submit="Save observation"
+            onSubmit={async (f) => {
+              const raw = value(f, 'amount');
+              const amount =
+                raw === '0' || raw === '0.00' ? 0 : parseAmount(raw);
+              await action.mutateAsync({
+                type: 'balance-check',
+                amount,
+                date: value(f, 'date'),
+                note: value(f, 'note'),
+              });
+              setNotice(
+                'Observation saved. The recorded balance was not changed.',
+              );
+            }}
+          >
+            <Field
+              name="amount"
+              label="Observed bank balance (₹)"
+              inputMode="decimal"
+              required
+            />
+            <Field
+              name="date"
+              label="Checked at (IST)"
+              type="datetime-local"
+              defaultValue="2026-09-08T12:00"
+              required
+            />
+            <Field name="note" label="Note (optional)" maxLength={300} />
+            <p className="text-xs text-muted-foreground">
+              In this demo, comparison uses the current sample register.
+              Historical reconciliation comes with the backend.
+            </p>
+          </Form>
+          <div className="mt-4">
+            <Feedback message={notice} />
+          </div>
+        </Panel>
+        <div className="space-y-5">
+          <Panel>
+            <h2 className="mb-4 font-heading text-xl">Last observation</h2>
+            {data.checks[0] && (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  {data.checks[0].date.replace('T', ' · ')} IST
+                </p>
+                <div className="my-4 flex justify-between">
+                  <span>Observed</span>
+                  <strong>{money(data.checks[0].amount)}</strong>
+                </div>
+                <div className="my-4 flex justify-between">
+                  <span>Recorded at check</span>
+                  <strong>{money(data.checks[0].recorded)}</strong>
+                </div>
+                <div className="flex justify-between border-t pt-4 text-warning">
+                  <span>Difference</span>
+                  <strong>
+                    {money(data.checks[0].amount - data.checks[0].recorded)}
+                  </strong>
+                </div>
+              </>
+            )}
+          </Panel>
+          <Disclosure title="Deposit cash into bank">
+            <Form
+              submit="Record cash-to-bank transfer"
+              onSubmit={async (f) => {
+                validateDate(value(f, 'date'));
+                await action.mutateAsync({
+                  type: 'transfer',
+                  amount: parseAmount(value(f, 'amount')),
+                  date: value(f, 'date'),
+                });
+                setNotice('Transfer recorded. Total funds are unchanged.');
+              }}
+            >
+              <p className="text-sm">Available cash: {money(b.cash)}</p>
+              <Field
+                name="amount"
+                label="Amount (₹)"
+                required
+                inputMode="decimal"
+              />
+              <Field
+                name="date"
+                label="Transfer date"
+                type="date"
+                defaultValue="2026-09-08"
+                required
+              />
+            </Form>
+          </Disclosure>
+        </div>
+      </div>
+    </>
+  );
+}
+export function PrayerEditor({ data }: { data: DemoState }) {
+  const action = useDemoAction();
+  const [notice, setNotice] = useState('');
+  return (
+    <div className="max-w-2xl">
+      <PageTitle
+        title="Prayer times"
+        description="Keep adhan and jamaat separate."
+      />
+      <Panel>
+        <Form
+          submit="Update demo timetable"
+          onSubmit={async (f) => {
+            const prayers = data.prayers.map((p) => ({
+              ...p,
+              adhan: value(f, `${p.id}-adhan`),
+              jamaat: value(f, `${p.id}-jamaat`),
+            }));
+            for (const p of prayers)
+              if (p.jamaat < p.adhan)
+                throw Error(`${p.name}: jamaat cannot be earlier than adhan.`);
+            await action.mutateAsync({ type: 'prayers', prayers });
+            setNotice('Sample timetable updated across the frontend.');
+          }}
+        >
+          <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 text-sm text-muted-foreground">
+            <span>Prayer</span>
+            <span>Adhan</span>
+            <span>Jamaat</span>
+          </div>
+          {data.prayers.map((p) => (
+            <div
+              className="grid grid-cols-[1fr_1fr_1fr] items-center gap-3"
+              key={p.id}
+            >
+              <span className="font-medium">{p.name}</span>
+              <Input
+                aria-label={`${p.name} adhan`}
+                name={`${p.id}-adhan`}
+                type="time"
+                defaultValue={p.adhan}
+                required
+                className="h-12"
+              />
+              <Input
+                aria-label={`${p.name} jamaat`}
+                name={`${p.id}-jamaat`}
+                type="time"
+                defaultValue={p.jamaat}
+                required
+                className="h-12"
+              />
+            </div>
+          ))}
+          <p className="text-xs text-muted-foreground">
+            This edits the demo timetable immediately. Future-effective
+            schedules, Jumu’ah, and Hijri authority will be connected in the
+            backend phase.
+          </p>
+        </Form>
+        <div className="mt-4">
+          <Feedback message={notice} />
+        </div>
+      </Panel>
+    </div>
+  );
+}
+export function NewsEditor({ data }: { data: DemoState }) {
+  const action = useDemoAction();
+  const [open, setOpen] = useState(false),
+    [notice, setNotice] = useState('');
+  return (
+    <>
+      <PageTitle
+        title="News & events"
+        action={
+          <Button className="h-11" onClick={() => setOpen(true)}>
+            <Plus />
+            Add notice
+          </Button>
+        }
+      />
+      <Feedback message={notice} error />
+      <div className="space-y-4">
+        {data.notices.map((n) => (
+          <Panel key={n.id}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-medium">{n.title}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {n.date} · {n.published ? 'Published' : 'Draft'}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                className="h-11"
+                onClick={async () => {
+                  try {
+                    await action.mutateAsync({
+                      type: 'toggle-notice',
+                      id: n.id,
+                    });
+                  } catch (e) {
+                    setNotice((e as Error).message);
+                  }
+                }}
+              >
+                {n.published ? 'Unpublish' : 'Publish'}
+              </Button>
+            </div>
+            <p className="mt-3 text-sm">{n.body}</p>
+          </Panel>
+        ))}
+      </div>
+      <Modal open={open} onOpenChange={setOpen} title="Add notice">
+        <Form
+          submit="Save draft"
+          onSubmit={async (f) => {
+            await action.mutateAsync({
+              type: 'notice',
+              notice: {
+                title: value(f, 'title'),
+                body: value(f, 'body'),
+                hindiTitle: value(f, 'hindiTitle'),
+                hindiBody: value(f, 'hindiBody'),
+                date: value(f, 'date'),
+                published: false,
+              },
+            });
+            setOpen(false);
+          }}
+        >
+          <Field
+            name="title"
+            label="Title (English)"
+            required
+            maxLength={100}
+          />
+          <Field name="body" label="Message">
+            <Textarea id="body" name="body" required maxLength={1000} />
+          </Field>
+          <Field
+            name="date"
+            label="Date"
+            type="date"
+            required
+            defaultValue="2026-09-08"
+          />
+          <Disclosure title="Hindi translation (optional)">
+            <div className="space-y-4">
+              <Field name="hindiTitle" label="शीर्षक" maxLength={100} />
+              <Field name="hindiBody" label="संदेश">
+                <Textarea id="hindiBody" name="hindiBody" maxLength={1000} />
+              </Field>
+            </div>
+          </Disclosure>
+        </Form>
+      </Modal>
+    </>
+  );
+}
+export function Receiving({ data }: { data: DemoState }) {
+  const action = useDemoAction();
+  const [image, setImage] = useState(data.receiving.image ?? ''),
+    [notice, setNotice] = useState('');
+  return (
+    <div className="max-w-xl">
+      <PageTitle
+        title="Receiving details"
+        description="A preview of the mosque’s payment instructions."
+      />
+      <Panel>
+        <Form
+          submit="Save demo receiving details"
+          onSubmit={async (f) => {
+            await action.mutateAsync({
+              type: 'receiving',
+              receiving: {
+                recipient: value(f, 'recipient'),
+                upi: value(f, 'upi'),
+                image,
+              },
+            });
+            setNotice(
+              'Sample receiving details updated. Payments remain disabled.',
+            );
+          }}
+        >
+          <Field
+            name="recipient"
+            label="Recipient name"
+            defaultValue={data.receiving.recipient}
+            required
+          />
+          <Field
+            name="upi"
+            label="UPI placeholder"
+            defaultValue={data.receiving.upi}
+            placeholder="[UPI ID]"
+          />
+          <Field name="qr" label="QR image preview">
+            <Input
+              id="qr"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (f)
+                  try {
+                    setImage(await readImage(f));
+                    setNotice('');
+                  } catch (e) {
+                    setNotice((e as Error).message);
+                  }
+              }}
+              className="h-12"
+            />
+          </Field>
+          {image && (
+            <img
+              src={image}
+              alt="Demo receiving QR"
+              className="mx-auto size-40 object-contain"
+            />
+          )}
+          <p className="text-xs text-muted-foreground">
+            Use a sample image only. Production updates will require
+            reauthentication and record the editor.
+          </p>
+        </Form>
+        <div className="mt-4">
+          <Feedback message={notice} />
+        </div>
+      </Panel>
+    </div>
+  );
+}
+export function exportPayments(data: DemoState) {
+  const escape = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  const lines = [
+    ['Date', 'Amount INR', 'Method', 'Status', 'Purpose'],
+    ...data.payments.map((p) => [
+      p.date,
+      String(p.amount / 100),
+      p.method,
+      p.status,
+      p.purpose,
+    ]),
+  ];
+  const csv = lines
+    .map((r) => r.map((v) => escape(/^[=+@-]/.test(v) ? `'${v}` : v)).join(','))
+    .join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'sample-contributions.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
