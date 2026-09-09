@@ -1,4 +1,4 @@
-# Mosque-app frontend
+# Mosque-app
 
 Minimal, responsive frontend for Gausul wara masjid in Durg. Built with React, TypeScript, Vinext (Next.js-compatible routing), TanStack Query, TanStack Table, shadcn/ui and Tailwind CSS v4.
 
@@ -25,3 +25,7 @@ Integrate Supabase Auth email verification, expiring single-use invitations, ser
 ## Validation
 
 Domain tests cover 11 cases including exact paise parsing, duplicate approvals, excluded pending/draft amounts, transfer conservation, reversal permissions, seat limits and theme completeness. Lint covers application code; generated shadcn primitives and its use-mobile hook are excluded without modifying the vendor components. Local build passes; broad browser/visual testing has not been performed.
+
+## Backend implementation
+
+The Supabase backend lives in `app/api/backend`, `lib/server` and `supabase/migrations`. See [backend security and launch status](docs/backend-security.md) for API usage, threat boundaries, secure configuration, migration/bootstrap steps, verification limits and outstanding release blockers. The frontend still uses its isolated demo adapter; the new backend is not yet deployed or connected to it. Do not use the demo as a live donation register.

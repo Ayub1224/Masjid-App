@@ -63,6 +63,7 @@ export type Notice = {
   hindiBody: string;
   date: string;
   published: boolean;
+  image?: string;
 };
 export type BalanceCheck = {
   id: string;

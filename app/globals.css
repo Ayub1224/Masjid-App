@@ -111,3 +111,308 @@ button {
     scroll-behavior: auto !important;
   }
 }
+
+.prayer-orbit {
+  border-radius: 2rem;
+  padding: 1.5rem;
+  border: 1px solid color-mix(in srgb, var(--card) 65%, var(--border));
+  background: var(--background);
+  box-shadow:
+    9px 9px 25px color-mix(in srgb, var(--primary) 12%, transparent),
+    -8px -8px 24px var(--card);
+}
+.orbit-toggle {
+  display: flex;
+  padding: 4px;
+  border-radius: 999px;
+  box-shadow:
+    inset 3px 3px 7px color-mix(in srgb, var(--primary) 12%, transparent),
+    inset -3px -3px 7px var(--card);
+}
+.orbit-toggle button {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+.orbit-toggle button[aria-pressed='true'] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 2px 3px 8px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+.orbit-motion {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--primary);
+  box-shadow:
+    3px 3px 8px color-mix(in srgb, var(--primary) 13%, transparent),
+    -3px -3px 8px var(--card);
+}
+.orbit-toggle button:focus-visible,
+.orbit-motion:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.orbit-sky {
+  max-width: 340px;
+  margin: -4px auto 0;
+  height: 220px;
+  overflow: hidden;
+}
+.orbit-sun-position {
+  transition: transform 1s linear;
+}
+.orbit-glow {
+  animation: orbit-breathe 5s ease-in-out infinite;
+}
+.orbit-paused .orbit-glow {
+  animation-play-state: paused;
+}
+.orbit-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 99px;
+  box-shadow:
+    inset 2px 2px 4px color-mix(in srgb, var(--primary) 18%, transparent),
+    inset -2px -2px 4px var(--card);
+}
+.orbit-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 1s linear;
+}
+@keyframes orbit-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (min-width: 640px) {
+  .prayer-orbit {
+    padding: 2rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orbit-glow {
+    animation: none;
+  }
+  .orbit-sun-position,
+  .orbit-track span {
+    transition: none;
+  }
+}
+
+/* Shared soft-surface system: applies to member/admin views and portalled controls. */
+:root {
+  --neo-light: color-mix(in srgb, var(--background) 20%, white);
+  --neo-shade: color-mix(in srgb, var(--primary) 16%, var(--background));
+  --neo-raised: 7px 7px 18px var(--neo-shade), -7px -7px 18px var(--neo-light);
+  --neo-inset:
+    inset 3px 3px 7px var(--neo-shade), inset -3px -3px 7px var(--neo-light);
+  --motion-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+main .bg-card,
+.neo-surface,
+[data-slot='accordion'],
+[data-slot='dialog-content'],
+[data-slot='select-content'],
+[data-slot='popover-content'],
+[data-slot='dropdown-menu-content'] {
+  background: var(--background);
+  border-color: color-mix(in srgb, var(--neo-light) 60%, var(--border));
+  box-shadow: var(--neo-raised);
+  border-radius: 1.25rem;
+}
+header,
+nav.fixed {
+  background: var(--background);
+  box-shadow: 0 5px 18px color-mix(in srgb, var(--neo-shade) 55%, transparent);
+}
+[data-slot='input'],
+[data-slot='textarea'],
+select,
+textarea,
+.soft-select {
+  background: var(--background);
+  box-shadow: var(--neo-inset);
+  border-color: color-mix(in srgb, var(--border) 55%, transparent);
+  border-radius: 0.85rem;
+}
+[data-slot='button'] {
+  border-radius: 0.9rem;
+  transition:
+    transform 180ms var(--motion-soft),
+    box-shadow 180ms var(--motion-soft),
+    background-color 180ms ease;
+}
+[data-slot='button'][data-variant='outline'],
+[data-slot='button'][data-variant='secondary'] {
+  background: var(--background);
+  box-shadow:
+    4px 4px 9px var(--neo-shade),
+    -4px -4px 9px var(--neo-light);
+}
+[data-slot='button']:not(:disabled):active {
+  transform: translateY(1px) scale(0.985);
+}
+@media (hover: hover) {
+  [data-slot='button']:not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+}
+[data-slot='button']:focus-visible,
+.soft-select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+[data-slot='select-trigger'] svg {
+  transition: transform 260ms var(--motion-soft);
+}
+[data-slot='select-trigger'][aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+.soft-select-menu {
+  padding: 6px;
+  transform-origin: var(--transform-origin);
+  animation: none !important;
+  transition:
+    opacity 200ms ease,
+    transform 260ms var(--motion-soft);
+}
+.soft-select-menu[data-starting-style],
+.soft-select-menu[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-7px) scale(0.97);
+}
+[data-slot='select-item'][data-highlighted] {
+  background: var(--accent);
+  border-radius: 0.6rem;
+}
+[data-slot='accordion-content'] {
+  height: var(--accordion-panel-height);
+  animation: none !important;
+  transition:
+    height 340ms var(--motion-soft),
+    opacity 240ms ease;
+}
+[data-slot='accordion-content'][data-starting-style],
+[data-slot='accordion-content'][data-ending-style] {
+  height: 0;
+  opacity: 0;
+}
+[data-slot='accordion-content'] > div {
+  height: auto;
+}
+[data-slot='accordion-trigger'] {
+  transition: background 200ms ease;
+}
+[data-slot='accordion-trigger']
+  svg:first-of-type[data-slot='accordion-trigger-icon'] {
+  display: block !important;
+  transition: transform 300ms var(--motion-soft);
+}
+[data-slot='accordion-trigger']
+  svg:last-of-type[data-slot='accordion-trigger-icon'] {
+  display: none !important;
+}
+[data-slot='accordion-trigger'][aria-expanded='true']
+  svg:first-of-type[data-slot='accordion-trigger-icon'] {
+  transform: rotate(180deg);
+}
+#main-content {
+  animation: surface-enter 350ms var(--motion-soft) both;
+}
+@keyframes surface-enter {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.orbit-dial {
+  width: min(100%, 360px);
+  margin: 14px auto 0;
+}
+.orbit-globe-rim {
+  filter: drop-shadow(4px 5px 6px var(--neo-shade))
+    drop-shadow(-4px -4px 6px var(--neo-light));
+}
+.orbit-continents {
+  transform-origin: 180px 166px;
+  animation: globe-drift 14s ease-in-out infinite alternate;
+}
+@keyframes globe-drift {
+  to {
+    transform: translateX(3px) rotate(2deg);
+  }
+}
+.orbit-paused .orbit-continents {
+  animation-play-state: paused;
+}
+.prayer-orbit {
+  box-shadow: var(--neo-raised);
+}
+.soft-action-link {
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.9rem;
+  background: var(--background);
+  color: var(--primary);
+  font-weight: 600;
+  box-shadow: var(--neo-raised);
+  transition:
+    transform 180ms var(--motion-soft),
+    box-shadow 180ms var(--motion-soft);
+}
+.soft-action-link:hover {
+  transform: translateY(-1px);
+}
+.event-row {
+  display: block;
+  padding: 1rem 0.25rem;
+  transition:
+    background 180ms ease,
+    transform 180ms var(--motion-soft);
+}
+.event-row:hover {
+  transform: translateX(3px);
+  background: color-mix(in srgb, var(--accent) 48%, transparent);
+}
+.event-row:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+  border-radius: 0.75rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  #main-content,
+  .orbit-continents {
+    animation: none;
+  }
+  [data-slot='accordion-content'],
+  .soft-select-menu,
+  [data-slot='button'],
+  [data-slot='select-trigger'] svg {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .neo-surface,
+  [data-slot='accordion'],
+  .prayer-orbit,
+  .soft-select {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+}

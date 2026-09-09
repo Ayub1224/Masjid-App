@@ -3,6 +3,8 @@ export const mosque = {
   hindiName: 'गौसुल वरा मस्जिद',
   location: 'Potiya Kala, Durg',
   timezone: 'Asia/Kolkata',
+  // Approximate Durg locality; replace with verified mosque coordinates.
+  coordinates: { latitude: 21.19, longitude: 81.28 },
   currency: 'INR',
   demo: true,
 } as const;

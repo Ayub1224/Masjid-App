@@ -1,18 +1,12 @@
 'use client';
+/* oxlint-disable next/no-img-element -- optional event images are user-managed content and may be remote. */
 import Link from 'next/link';
+import { PrayerOrbit } from './prayer-orbit';
+import { SoftSelect } from '@/components/app/soft-select';
+import { mosqueDate, scheduleCalendar } from '@/lib/prayer/calculated';
 import type { Notice } from '@/lib/data/domain';
-import { useEffect, useState } from 'react';
-import {
-  ArrowRight,
-  Clock3,
-  CalendarDays,
-  Megaphone,
-  MapPin,
-  ChevronDown,
-  MoonStar,
-  Sun,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { useEffect, useMemo, useState } from 'react';
+import { Clock3, CalendarDays, Megaphone, MoonStar } from 'lucide-react';
 import {
   Accordion,
   AccordionItem,
@@ -21,6 +15,7 @@ import {
 } from '@/components/ui/accordion';
 import { initialPrayers, mosque, type Prayer } from '@/config/mosque';
 import { usePreferences } from '@/components/app/preferences';
+import { Modal } from '@/components/app/primitives';
 export const displayTime = (time: string) => {
   const [h, m] = time.split(':').map(Number);
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
@@ -45,17 +40,29 @@ export function PrayerHome({
   notices?: Notice[];
 }) {
   const { t, language } = usePreferences();
+  const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
     const frame = requestAnimationFrame(() => setNow(new Date()));
-    const id = setInterval(() => setNow(new Date()), 30000);
+    const id = setInterval(() => setNow(new Date()), 1000);
     return () => {
       clearInterval(id);
       cancelAnimationFrame(frame);
     };
   }, []);
+  const [source, setSource] = useState('calculated');
+  const date = now ? mosqueDate(now) : null;
+  const calendar = useMemo(
+    () =>
+      date && source === 'calculated'
+        ? scheduleCalendar(date, prayers)
+        : undefined,
+    [date, source, prayers],
+  );
+  const shownPrayers =
+    calendar?.find((d) => d.offset === 0)?.prayers ?? prayers;
   const next = now
-    ? nextPrayer(prayers, now)
+    ? nextPrayer(shownPrayers, now)
     : { prayer: prayers[1], tomorrow: false };
   const p = next.prayer;
   return (
@@ -83,35 +90,28 @@ export function PrayerHome({
           <span className="text-xs">IST</span>
         </span>
       </div>
-      <div className="rounded-2xl bg-primary px-6 py-7 text-primary-foreground shadow-sm sm:px-8">
-        <div className="mb-5 flex items-center justify-between">
-          <span className="text-xs font-medium uppercase tracking-[.18em] opacity-80">
-            {t('Next jamaat', 'अगली जमात')}
-            {next.tomorrow ? ' · ' + t('Tomorrow', 'कल') : ''}
-          </span>
-          <Sun className="size-5 opacity-70" strokeWidth={1.5} />
-        </div>
-        <div className="flex items-end justify-between gap-3">
-          <h1 className="font-heading text-4xl sm:text-5xl">
-            {language === 'hi' ? p.hindi : p.name}
-          </h1>
-          <p className="text-3xl font-medium tabular-nums tracking-tight sm:text-4xl">
-            {displayTime(p.jamaat).split(' ')[0]}
-            <span className="ml-1.5 text-sm opacity-75">
-              {displayTime(p.jamaat).split(' ')[1]}
-            </span>
-          </p>
-        </div>
-        <div className="mt-5 flex items-center justify-between border-t border-primary-foreground/20 pt-4 text-sm opacity-85">
-          <span>
-            {t('Adhan', 'अज़ान')} {displayTime(p.adhan)}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <MapPin className="size-3.5" />
-            {t('At your mosque', 'आपकी मस्जिद में')}
-          </span>
-        </div>
-      </div>
+      <SoftSelect
+        label={t('Prayer timing source', 'नमाज़ समय का स्रोत')}
+        value={source}
+        onChange={setSource}
+        className="w-full"
+      >
+        <option value="calculated">
+          {t(
+            'Calculated starts · Karachi / Hanafi',
+            'गणना किए समय · कराची / हनफ़ी',
+          )}
+        </option>
+        <option value="mosque">
+          {t('Mosque timetable · Demo', 'मस्जिद समय-सारणी · डेमो')}
+        </option>
+      </SoftSelect>
+      <PrayerOrbit
+        prayers={shownPrayers}
+        now={now}
+        calendar={calendar}
+        calculated={source === 'calculated'}
+      />
       <Accordion className="overflow-hidden rounded-xl border bg-card">
         <AccordionItem value="prayers">
           <AccordionTrigger className="items-center px-5 py-5 text-base hover:no-underline">
@@ -125,14 +125,18 @@ export function PrayerHome({
               <thead>
                 <tr className="border-b text-muted-foreground">
                   <th className="py-3 font-normal">{t('Prayer', 'नमाज़')}</th>
-                  <th className="py-3 font-normal">{t('Adhan', 'अज़ान')}</th>
+                  <th className="py-3 font-normal">
+                    {source === 'calculated'
+                      ? t('Calculated start', 'गणना किया समय')
+                      : t('Adhan', 'अज़ान')}
+                  </th>
                   <th className="py-3 text-right font-normal">
                     {t('Jamaat', 'जमात')}
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {prayers.map((row) => (
+                {shownPrayers.map((row) => (
                   <tr
                     key={row.id}
                     className={
@@ -154,23 +158,18 @@ export function PrayerHome({
             </table>
             <p className="mt-4 text-xs text-muted-foreground">
               {t(
-                'Sample timetable · Jumu’ah schedule to be confirmed.',
-                'नमूना समय-सारणी · जुमा के समय की पुष्टि बाकी है।',
+                'Calculated starts: Adhan JS, Karachi / Hanafi, approximate Durg coordinates. Method awaits mosque confirmation. Jamaat times are samples; Jumu’ah awaits confirmation.',
+                'गणना: Adhan JS, कराची / हनफ़ी, दुर्ग के अनुमानित निर्देशांक। विधि की पुष्टि बाकी है। जमात के समय नमूने हैं; जुमा की पुष्टि बाकी है।',
               )}
             </p>
           </AccordionContent>
         </AccordionItem>
       </Accordion>
-      <Button
-        className="h-12 w-full text-base"
-        render={<Link href={member ? '/contribute' : '/login'} />}
-      >
-        {t(
-          member ? 'Make a contribution' : 'Member login',
-          member ? 'योगदान करें' : 'सदस्य लॉगिन',
-        )}
-        <ArrowRight className="ml-2 size-4" />
-      </Button>
+      {member && (
+        <Link href="/contribute" className="soft-action-link">
+          {t('Make a contribution', 'योगदान करें')}
+        </Link>
+      )}
       <Accordion className="overflow-hidden rounded-xl border bg-card">
         <AccordionItem value="news">
           <AccordionTrigger className="items-center px-5 py-5 text-base hover:no-underline">
@@ -186,9 +185,11 @@ export function PrayerHome({
             {notices
               .filter((n) => n.published)
               .map((n) => (
-                <div
+                <button
+                  type="button"
                   key={n.id}
-                  className="border-b pb-4 last:border-0 last:pb-0"
+                  className="event-row w-full border-b pb-4 text-left last:border-0 last:pb-0"
+                  onClick={() => setSelectedNotice(n)}
                 >
                   <p className="font-medium">
                     {language === 'hi' ? n.hindiTitle || n.title : n.title}
@@ -196,7 +197,7 @@ export function PrayerHome({
                   <p className="mt-1 text-sm text-muted-foreground">
                     {language === 'hi' ? n.hindiBody || n.body : n.body}
                   </p>
-                </div>
+                </button>
               ))}
             {!notices.some((n) => n.published) && (
               <p className="text-sm text-muted-foreground">
@@ -206,6 +207,35 @@ export function PrayerHome({
           </AccordionContent>
         </AccordionItem>
       </Accordion>
+      <Modal
+        open={!!selectedNotice}
+        onOpenChange={(open) => !open && setSelectedNotice(null)}
+        title={
+          selectedNotice
+            ? language === 'hi'
+              ? selectedNotice.hindiTitle || selectedNotice.title
+              : selectedNotice.title
+            : ''
+        }
+        description={selectedNotice?.date}
+      >
+        {selectedNotice && (
+          <div className="space-y-4">
+            {selectedNotice.image && (
+              <img
+                src={selectedNotice.image}
+                alt=""
+                className="max-h-64 w-full rounded-xl object-cover"
+              />
+            )}
+            <p className="whitespace-pre-wrap text-base leading-7">
+              {language === 'hi'
+                ? selectedNotice.hindiBody || selectedNotice.body
+                : selectedNotice.body}
+            </p>
+          </div>
+        )}
+      </Modal>
       <p className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
         <MoonStar className="size-3.5" />
         {t(
@@ -223,13 +253,14 @@ export function MosqueSelector() {
       <label htmlFor="mosque" className="sr-only">
         {t('Your mosque', 'आपकी मस्जिद')}
       </label>
-      <select
+      <SoftSelect
         id="mosque"
-        className="h-12 w-full appearance-none rounded-xl border bg-card pl-4 pr-10 text-sm font-medium"
+        label={t('Your mosque', 'आपकी मस्जिद')}
+        className="w-full"
+        defaultValue="local"
       >
-        <option>{mosque.name}</option>
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-4 top-4 size-4 text-muted-foreground" />
+        <option value="local">{mosque.name}</option>
+      </SoftSelect>
     </div>
   );
 }

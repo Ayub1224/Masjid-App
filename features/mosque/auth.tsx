@@ -37,13 +37,9 @@ export function Login({
           invite
             ? 'Accept your invitation'
             : recover
-              ? 'Reset your password'
+              ? 'Reset your PIN'
               : 'Welcome back',
-          invite
-            ? 'आमंत्रण स्वीकार करें'
-            : recover
-              ? 'पासवर्ड रीसेट करें'
-              : 'आपका स्वागत है',
+          invite ? 'आमंत्रण स्वीकार करें' : recover ? 'पिन रीसेट करें' : 'आपका स्वागत है',
         )}
         description={t(
           'Your mosque. Your community.',
@@ -59,28 +55,31 @@ export function Login({
           onSubmit={() =>
             setNotice(
               t(
-                'Authentication is not connected in this frontend preview. No email was sent and no password was saved.',
-                'इस पूर्वावलोकन में प्रमाणीकरण जुड़ा नहीं है। कोई ईमेल नहीं भेजा गया और पासवर्ड सहेजा नहीं गया।',
+                'Authentication is not connected in this frontend preview. No message was sent and no PIN was saved.',
+                'इस पूर्वावलोकन में प्रमाणीकरण जुड़ा नहीं है। कोई संदेश नहीं भेजा गया और पिन सहेजा नहीं गया।',
               ),
             )
           }
         >
           <Field
-            label={t('Email address', 'ईमेल पता')}
-            name="email"
-            type="email"
+            label={t('Phone or email', 'फोन या ईमेल')}
+            name="identifier"
+            type="text"
             required
-            autoComplete="email"
-            placeholder="you@example.com"
+            autoComplete="username"
+            placeholder="you@example.com or +91 98…"
           />
           {!recover && (
             <div className="relative">
               <Field
-                label={t('Password', 'पासवर्ड')}
-                name="password"
+                label={t('6-digit PIN', '6 अंकों का पिन')}
+                name="pin"
                 type={show ? 'text' : 'password'}
                 required
-                minLength={8}
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                minLength={6}
+                maxLength={6}
                 autoComplete={invite ? 'new-password' : 'current-password'}
               />
               <Button
@@ -108,7 +107,7 @@ export function Login({
             className="mt-3 h-11 w-full"
             onClick={() => router.push('/forgot-password')}
           >
-            {t('Forgot password?', 'पासवर्ड भूल गए?')}
+            {t('Forgot PIN?', 'पिन भूल गए?')}
           </Button>
         )}
       </Panel>

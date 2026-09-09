@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import { SoftSelect } from './soft-select';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useEffect, useState } from 'react';
 import {
@@ -16,14 +17,20 @@ import {
   QrCode,
   ShieldCheck,
   LogOut,
-  Palette,
-  ChevronDown,
   Menu,
   X,
   ArrowRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Brand } from './brand';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import { useDemoRole, useDemoData } from './providers';
 import { usePreferences } from './preferences';
 import { themes, isThemeName } from '@/config/themes';
@@ -88,10 +95,10 @@ export function AppShell({
           </span>
           <label className="flex items-center gap-2">
             {t('Explore as', 'डेमो भूमिका')}
-            <select
-              aria-label="Demo role"
+            <SoftSelect
+              label="Demo role"
               value={role}
-              onChange={(e) => switchRole(e.target.value as Role)}
+              onChange={(value) => switchRole(value as Role)}
               className="min-h-9 max-w-36 rounded-md border bg-card px-2"
             >
               <option value="guest">Visitor</option>
@@ -99,7 +106,7 @@ export function AppShell({
               <option value="admin">Admin</option>
               <option value="owner">Owner</option>
               <option value="super-admin">Super admin</option>
-            </select>
+            </SoftSelect>
           </label>
         </div>
       </div>
@@ -127,24 +134,20 @@ export function AppShell({
             >
               {language === 'en' ? 'हिन्दी' : 'English'}
             </Button>
-            <label className="relative flex items-center">
-              <Palette className="pointer-events-none absolute left-3 size-4 text-primary" />
-              <select
-                aria-label="Color theme"
-                value={theme}
-                onChange={(e) => {
-                  if (isThemeName(e.target.value)) setTheme(e.target.value);
-                }}
-                className="h-11 w-11 appearance-none rounded-full border bg-background pl-10 text-transparent sm:w-32 sm:rounded-lg sm:text-foreground"
-              >
-                {Object.entries(themes).map(([id, v]) => (
-                  <option value={id} key={id}>
-                    {v.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2 hidden size-3 sm:block" />
-            </label>
+            <SoftSelect
+              label="Color theme"
+              value={theme}
+              onChange={(v) => {
+                if (isThemeName(v)) setTheme(v);
+              }}
+              className="max-w-28"
+            >
+              {Object.entries(themes).map(([id, v]) => (
+                <option value={id} key={id}>
+                  {v.label}
+                </option>
+              ))}
+            </SoftSelect>
             {role === 'guest' && path !== '/login' && (
               <Button
                 className="hidden h-11 px-4 sm:inline-flex"
@@ -216,12 +219,46 @@ export function AppShell({
         )}
         <main
           id="main-content"
+          key={path}
           className={
             admin
               ? 'min-w-0 px-5 py-8 sm:p-8 lg:p-10'
               : 'mx-auto w-full max-w-xl px-5 pb-28 pt-7 sm:px-8 sm:pt-10'
           }
         >
+          {path !== '/' && (
+            <Breadcrumb className="mb-6">
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink
+                    render={
+                      <Link
+                        href={
+                          role === 'guest' ? '/' : isMember ? '/home' : '/admin'
+                        }
+                      />
+                    }
+                  >
+                    {role === 'guest'
+                      ? t('Home', 'होम')
+                      : isMember
+                        ? t('Home', 'होम')
+                        : t('Mosque management', 'मस्जिद प्रबंधन')}
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>
+                    {path
+                      .split('/')
+                      .filter(Boolean)
+                      .at(-1)
+                      ?.replaceAll('-', ' ') ?? 'Page'}
+                  </BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          )}
           {children}
         </main>
       </div>

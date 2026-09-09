@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/app/data-table';
 import {
   PageTitle,
@@ -552,11 +553,46 @@ export function Payments({ data }: { data: DemoState }) {
   const [selected, setSelected] = useState<Payment | null>(null),
     [filter, setFilter] = useState('pending'),
     [reject, setReject] = useState(false),
+    [bulkReject, setBulkReject] = useState(false),
+    [selectedIds, setSelectedIds] = useState<string[]>([]),
     [message, setMessage] = useState('');
+  const pendingPayments = data.payments.filter(
+    (payment) => payment.status === 'pending',
+  );
   const p = selected
     ? data.payments.find((p) => p.id === selected.id)
     : undefined;
   const columns: ColumnDef<Payment, unknown>[] = [
+    {
+      id: 'select',
+      header: () => (
+        <Checkbox
+          aria-label="Select all pending payments"
+          checked={
+            pendingPayments.length > 0 &&
+            pendingPayments.every((payment) => selectedIds.includes(payment.id))
+          }
+          onCheckedChange={(checked) =>
+            setSelectedIds(
+              checked ? pendingPayments.map((payment) => payment.id) : [],
+            )
+          }
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          aria-label={`Select payment from ${data.members.find((member) => member.id === row.original.memberId)?.name ?? 'member'}`}
+          checked={selectedIds.includes(row.original.id)}
+          onCheckedChange={(checked) =>
+            setSelectedIds((current) =>
+              checked
+                ? [...new Set([...current, row.original.id])]
+                : current.filter((id) => id !== row.original.id),
+            )
+          }
+        />
+      ),
+    },
     {
       id: 'member',
       accessorFn: (p) =>
@@ -612,6 +648,36 @@ export function Payments({ data }: { data: DemoState }) {
           </Button>
         ))}
       </div>
+      {filter === 'pending' && (
+        <div className="mb-5 flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3">
+          <span className="mr-auto text-sm text-muted-foreground">
+            {selectedIds.length} selected
+          </span>
+          <Button
+            className="h-11"
+            disabled={!selectedIds.length || action.isPending}
+            onClick={async () => {
+              for (const id of selectedIds)
+                await action.mutateAsync({
+                  type: 'review',
+                  id,
+                  status: 'verified',
+                });
+              setSelectedIds([]);
+            }}
+          >
+            <Check /> Approve selected
+          </Button>
+          <Button
+            variant="destructive"
+            className="h-11"
+            disabled={!selectedIds.length || action.isPending}
+            onClick={() => setBulkReject(true)}
+          >
+            Reject selected
+          </Button>
+        </div>
+      )}
       <DataTable
         data={data.payments.filter(
           (p) => filter === 'all' || p.status === 'pending',
@@ -735,6 +801,35 @@ export function Payments({ data }: { data: DemoState }) {
             <Feedback message={message} error />
           </>
         )}
+      </Modal>
+      <Modal
+        open={bulkReject}
+        onOpenChange={setBulkReject}
+        title="Reject selected payments"
+        description="A shared reason will be saved for every selected submission."
+      >
+        <Form
+          submit="Reject selected"
+          onSubmit={async (form) => {
+            const reason = value(form, 'reason');
+            for (const id of selectedIds)
+              await action.mutateAsync({
+                type: 'review',
+                id,
+                status: 'rejected',
+                reason,
+              });
+            setSelectedIds([]);
+            setBulkReject(false);
+          }}
+        >
+          <Field
+            name="reason"
+            label="Reason for rejection"
+            required
+            maxLength={500}
+          />
+        </Form>
       </Modal>
     </>
   );
@@ -1206,6 +1301,7 @@ export function NewsEditor({ data }: { data: DemoState }) {
                 hindiBody: value(f, 'hindiBody'),
                 date: value(f, 'date'),
                 published: false,
+                image: value(f, 'image'),
               },
             });
             setOpen(false);
@@ -1226,6 +1322,12 @@ export function NewsEditor({ data }: { data: DemoState }) {
             type="date"
             required
             defaultValue="2026-09-08"
+          />
+          <Field
+            name="image"
+            label="Picture URL (optional)"
+            type="url"
+            placeholder="https://…"
           />
           <Disclosure title="Hindi translation (optional)">
             <div className="space-y-4">

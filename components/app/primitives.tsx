@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import { SoftSelect } from './soft-select';
 import { type ReactNode, type SyntheticEvent, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,7 +50,9 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={`rounded-xl border bg-card p-5 sm:p-6 ${className}`}>
+    <section
+      className={`neo-surface rounded-xl border bg-card p-5 sm:p-6 ${className}`}
+    >
       {children}
     </section>
   );
@@ -247,7 +250,7 @@ export function Choice({
   required?: boolean;
 }) {
   return (
-    <select
+    <SoftSelect
       id={name}
       name={name}
       defaultValue={defaultValue}
@@ -255,6 +258,6 @@ export function Choice({
       className="h-12 w-full rounded-lg border bg-background px-3 text-base outline-ring"
     >
       {children}
-    </select>
+    </SoftSelect>
   );
 }

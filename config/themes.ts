@@ -1,5 +1,8 @@
 /** Add a theme here. Components consume semantic CSS variables, never palette values. */
 export const themeTokens = [
+  'orbit-sun',
+  'orbit-land',
+  'orbit-night',
   'background',
   'foreground',
   'card',
@@ -36,6 +39,9 @@ export type ThemeDefinition = {
   colors: Record<ThemeToken, string>;
 };
 const common = {
+  'orbit-sun': '#e6b65e',
+  'orbit-land': '#94b99f',
+  'orbit-night': '#102b27',
   card: '#ffffff',
   'card-foreground': '#21352d',
   popover: '#ffffff',
