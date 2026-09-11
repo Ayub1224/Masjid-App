@@ -36,7 +36,7 @@ import {
   Feedback,
   value,
 } from '@/components/app/primitives';
-import { useDemoAction, useDemoRole } from '@/components/app/providers';
+import { useMosqueAction, useIdentity } from '@/components/app/providers';
 import {
   balances,
   money,
@@ -56,10 +56,8 @@ import { readImage } from '@/features/mosque/contributions';
 export function AdminOverview({ data }: { data: DemoState }) {
   const b = balances(data);
   const pending = data.payments.filter((p) => p.status === 'pending');
-  const { role, demo, session } = useDemoRole();
-  const grants = demo
-    ? data.members.find((m) => m.id === 'a1')?.permissions
-    : (session?.profile?.permissions ?? []);
+  const { role, session } = useIdentity();
+  const grants = session?.profile?.permissions ?? [];
   return (
     <>
       <PageTitle
@@ -178,8 +176,8 @@ export function Members({
   data: DemoState;
   administrators?: boolean;
 }) {
-  const action = useDemoAction();
-  const { role: actorRole } = useDemoRole();
+  const action = useMosqueAction();
+  const { role: actorRole } = useIdentity();
   const [open, setOpen] = useState(false),
     [created, setCreated] = useState(''),
     [editing, setEditing] = useState<Member | null>(null),
@@ -367,8 +365,8 @@ function InvitationForm({
   administrators: boolean;
   onCreated: (id: string) => void;
 }) {
-  const action = useDemoAction();
-  const { role: actorRole } = useDemoRole();
+  const action = useMosqueAction();
+  const { role: actorRole } = useIdentity();
   const [grants, setGrants] = useState<Permission[]>([...permissions]);
   return (
     <Form
@@ -395,7 +393,7 @@ function InvitationForm({
         label="Full name"
         required
         maxLength={100}
-        placeholder="Sample name"
+        placeholder="Full name"
       />
       <Field
         name="email"
@@ -481,7 +479,7 @@ function PermissionEditor({
   onDone: () => void;
 }) {
   const [grants, setGrants] = useState(member.permissions);
-  const action = useDemoAction();
+  const action = useMosqueAction();
   return (
     <Form
       submit="Save permissions"
@@ -501,10 +499,7 @@ function PermissionEditor({
 function InviteResult({ id }: { id: string }) {
   const [notice, setNotice] = useState('');
   const url =
-    typeof window === 'undefined'
-      ? ''
-      : (invitationLinks.get(id) ??
-        `${window.location.origin}/invite?demo=${id}`);
+    typeof window === 'undefined' ? '' : (invitationLinks.get(id) ?? '');
   async function copy() {
     try {
       await navigator.clipboard.writeText(url);
@@ -513,6 +508,13 @@ function InviteResult({ id }: { id: string }) {
       setNotice('Select and copy the link below.');
     }
   }
+  if (!url)
+    return (
+      <p className="text-sm text-muted-foreground">
+        The invitation link is unavailable. Generate a new invitation from the
+        member record.
+      </p>
+    );
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3 text-success">
@@ -560,8 +562,8 @@ function InviteResult({ id }: { id: string }) {
   );
 }
 export function Payments({ data }: { data: DemoState }) {
-  const { role } = useDemoRole();
-  const action = useDemoAction();
+  const { role } = useIdentity();
+  const action = useMosqueAction();
   const [selected, setSelected] = useState<Payment | null>(null),
     [filter, setFilter] = useState('pending'),
     [reject, setReject] = useState(false),
@@ -760,9 +762,7 @@ export function Payments({ data }: { data: DemoState }) {
             ) : (
               <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted text-muted-foreground">
                 <FileImage />
-                <span className="text-sm">
-                  Sample record · no actual screenshot
-                </span>
+                <span className="text-sm">No payment screenshot available</span>
               </div>
             )}
             {p.reason && <Feedback message={p.reason} error />}
@@ -880,7 +880,7 @@ export function Payments({ data }: { data: DemoState }) {
   );
 }
 export function Cash({ data }: { data: DemoState }) {
-  const action = useDemoAction();
+  const action = useMosqueAction();
   const [saved, setSaved] = useState(false);
   return (
     <div className="max-w-xl">
@@ -957,8 +957,8 @@ export function Cash({ data }: { data: DemoState }) {
   );
 }
 export function Expenses({ data }: { data: DemoState }) {
-  const action = useDemoAction();
-  const { role } = useDemoRole();
+  const action = useMosqueAction();
+  const { role } = useIdentity();
   const [open, setOpen] = useState(false),
     [reverse, setReverse] = useState<Expense | null>(null),
     [notice, setNotice] = useState('');
@@ -1114,7 +1114,7 @@ export function Expenses({ data }: { data: DemoState }) {
   );
 }
 export function Balance({ data }: { data: DemoState }) {
-  const action = useDemoAction();
+  const action = useMosqueAction();
   const b = balances(data);
   const [notice, setNotice] = useState('');
   return (
@@ -1237,7 +1237,7 @@ export function Balance({ data }: { data: DemoState }) {
   );
 }
 export function PrayerEditor({ data }: { data: DemoState }) {
-  const action = useDemoAction();
+  const action = useMosqueAction();
   const schedule = data.prayers.length ? data.prayers : initialPrayers;
   const [notice, setNotice] = useState('');
   return (
@@ -1304,7 +1304,7 @@ export function PrayerEditor({ data }: { data: DemoState }) {
   );
 }
 export function NewsEditor({ data }: { data: DemoState }) {
-  const action = useDemoAction();
+  const action = useMosqueAction();
   const [open, setOpen] = useState(false),
     [notice, setNotice] = useState('');
   return (
@@ -1410,14 +1410,14 @@ export function NewsEditor({ data }: { data: DemoState }) {
   );
 }
 export function Receiving({ data }: { data: DemoState }) {
-  const action = useDemoAction();
+  const action = useMosqueAction();
   const [image, setImage] = useState(data.receiving.image ?? ''),
     [notice, setNotice] = useState('');
   return (
     <div className="max-w-xl">
       <PageTitle
         title="Receiving details"
-        description="A preview of the mosque’s payment instructions."
+        description="Manage the mosque’s payment instructions."
       />
       <Panel>
         <Form
@@ -1431,9 +1431,7 @@ export function Receiving({ data }: { data: DemoState }) {
                 image,
               },
             });
-            setNotice(
-              'Sample receiving details updated. Payments remain disabled.',
-            );
+            setNotice('Receiving details updated.');
           }}
         >
           <Field
@@ -1469,7 +1467,7 @@ export function Receiving({ data }: { data: DemoState }) {
           {image && (
             <img
               src={image}
-              alt="Demo receiving QR"
+              alt="Mosque UPI payment QR code"
               className="mx-auto size-40 object-contain"
             />
           )}

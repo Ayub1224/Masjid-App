@@ -1,3 +1,4 @@
+import { mosqueDetailsSchema } from '@/lib/mosque-details';
 import { z } from 'zod';
 import { keyedToken, pinPassword, loginIdentity } from '@/lib/server/pin';
 import {
@@ -58,9 +59,6 @@ async function handle(request: Request) {
     const path = new URL(request.url).pathname.replace(/^\/api\/backend\//, '');
     if (path === 'settings' && request.method === 'GET')
       return json({
-        demo:
-          process.env.MOSQUE_DEMO_MODE === 'true' &&
-          process.env.NODE_ENV !== 'production',
         turnstileSiteKey: process.env.TURNSTILE_SITE_KEY ?? '',
       });
     const { origin } = config();
@@ -72,6 +70,14 @@ async function handle(request: Request) {
         path.startsWith('auth/')
       )
         sameOrigin(request, origin);
+    }
+    if (path === 'mosque' && request.method === 'GET') {
+      const { data, error } = await supabase()
+        .from('mosque_details')
+        .select('name,address,latitude,longitude,picture')
+        .maybeSingle();
+      dbError(error);
+      return json(data);
     }
     if (path === 'public' && request.method === 'GET') {
       const client = supabase();
@@ -99,6 +105,17 @@ async function handle(request: Request) {
       if (error || !data.session)
         throw new ApiError(401, 'INVALID_CREDENTIALS');
       return sessionCookies(json({ ok: true }), data.session, input.remember);
+    }
+    if (path === 'auth/identify' && request.method === 'POST') {
+      const input = z
+        .strictObject({ identifier: z.string().trim().min(3).max(254) })
+        .parse(await bodyJson(request));
+      try {
+        await loginIdentity(input.identifier);
+      } catch {
+        throw new ApiError(404, 'ACCOUNT_NOT_FOUND');
+      }
+      return json({ kind: 'pin', digits: 6 });
     }
     if (path === 'auth/register' && request.method === 'POST') {
       const input = registration.parse(await bodyJson(request));
@@ -174,6 +191,12 @@ async function handle(request: Request) {
       return sessionCookies(json({ ok: true }), data.session, false);
     }
     const { client, user, token } = await authenticated(request);
+    if (path === 'mosque' && request.method === 'POST') {
+      const input = mosqueDetailsSchema.parse(await bodyJson(request, 720000));
+      const { error } = await client.rpc('mosque_save_details', { input });
+      dbError(error);
+      return json({ ok: true });
+    }
     if (path === 'auth/logout' && request.method === 'POST') {
       // Revoke refresh tokens using the caller JWT; no service-role key is used.
       const response = await fetch(

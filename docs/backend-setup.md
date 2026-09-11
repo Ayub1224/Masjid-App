@@ -1,6 +1,6 @@
 # Backend setup and verification
 
-The application defaults to the live API. It does not silently fall back to demo members, donations or balances. The optional `MOSQUE_DEMO_MODE=true` preview is ignored in production.
+The application defaults to the live API. It does not silently fall back to demo members, donations or balances. Visitors see the public view. Member and administrator access is determined only by the authenticated session.
 
 ## Local configuration
 

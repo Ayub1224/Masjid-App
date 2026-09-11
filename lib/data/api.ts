@@ -18,8 +18,12 @@ export class BackendError extends Error {
           INVALID_COMMAND:
             'The record changed or the values are invalid. Refresh and try again.',
           BACKEND_NOT_CONFIGURED: 'The backend is not configured yet.',
-          ACCOUNT_OR_INVITATION_UNAVAILABLE: 'No active account or valid invitation was found. Check your details or contact your mosque administrator.',
-          INVALID_CREDENTIAL_FORMAT: 'Enter the password or PIN requested for this account.',
+          ACCOUNT_OR_INVITATION_UNAVAILABLE:
+            'No active account or valid invitation was found. Check your details or contact your mosque administrator.',
+          ACCOUNT_NOT_FOUND:
+            'No matching mosque account was found. Check your email or phone number.',
+          INVALID_CREDENTIAL_FORMAT:
+            'Enter the password or PIN requested for this account.',
           RATE_LIMITED: 'Too many attempts. Please wait before trying again.',
         } as Record<string, string>
       )[code] ?? code.replaceAll('_', ' ').toLowerCase(),

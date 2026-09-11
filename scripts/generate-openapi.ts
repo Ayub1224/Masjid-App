@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { z } from 'zod';
+import { mosqueDetailsSchema } from '../lib/mosque-details.ts';
 import {
   commandSchema,
   credentials,
@@ -28,6 +29,7 @@ function add(
   } = {},
 ) {
   paths[`/api/backend/${path}`] = {
+    ...(paths[`/api/backend/${path}`] as object),
     [method]: {
       operationId: path.replaceAll('/', '_') + '_' + method,
       summary,
@@ -80,6 +82,9 @@ function add(
     },
   };
 }
+add('mosque', 'get', 'Read mosque details', undefined, { public: true });
+add('mosque', 'post', 'Save mosque details', jsonSchema(mosqueDetailsSchema));
+
 add('settings', 'get', 'Public UI configuration', undefined, {
   public: true,
   response: object({ demo: { type: 'boolean' }, turnstileSiteKey: str }),

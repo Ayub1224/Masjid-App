@@ -46,12 +46,7 @@ export function Finance({ data }: { data: DemoState }) {
             {money(b.total)}
           </p>
           <p className="text-xs opacity-80">
-            {t(
-              data.balance
-                ? 'Recorded transactions'
-                : 'Sample register · Opening balance on 1 Sep 2026',
-              'नमूना रजिस्टर · प्रारंभिक राशि 1 सितंबर 2026',
-            )}
+            {t('Recorded transactions', 'दर्ज किए गए लेनदेन')}
           </p>
         </div>
         <Disclosure

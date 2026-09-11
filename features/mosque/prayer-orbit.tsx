@@ -1,7 +1,7 @@
 'use client';
 import { useId, useState } from 'react';
 import { getPosition } from 'suncalc';
-import { Pause, Play, MapPin } from 'lucide-react';
+import { Pause, Play, MapPin, Clock3, CalendarDays } from 'lucide-react';
 import { type Prayer, mosque } from '@/config/mosque';
 import { usePreferences } from '@/components/app/preferences';
 import { prayerInterval, countdown } from '@/lib/prayer/clock';
@@ -10,11 +10,15 @@ export function PrayerOrbit({
   now,
   calendar,
   calculated = false,
+  visitor = false,
+  coordinates = mosque.coordinates,
 }: {
   prayers: Prayer[];
   now: Date | null;
   calendar?: { offset: number; prayers: Prayer[] }[];
   calculated?: boolean;
+  visitor?: boolean;
+  coordinates?: { latitude: number; longitude: number };
 }) {
   const { t, language } = usePreferences();
   const [mode, setMode] = useState<'adhan' | 'jamaat'>('adhan');
@@ -29,11 +33,7 @@ export function PrayerOrbit({
       )
     : null;
   const sun = now
-    ? getPosition(
-        now,
-        mosque.coordinates.latitude,
-        mosque.coordinates.longitude,
-      )
+    ? getPosition(now, coordinates.latitude, coordinates.longitude)
     : null;
   const day = !!sun && sun.altitude >= 0;
   const minuteOf = (value: string) => {
@@ -69,12 +69,52 @@ export function PrayerOrbit({
         'नमाज़ की उलटी गिनती और सूर्य की स्थिति',
       )}
     >
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b pb-4 text-sm text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <CalendarDays className="size-3.5" />
+          {now
+            ? new Intl.DateTimeFormat(language === 'hi' ? 'hi-IN' : 'en-IN', {
+                timeZone: mosque.timezone,
+                weekday: 'short',
+                day: 'numeric',
+                month: 'long',
+              }).format(now)
+            : '—'}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Clock3 className="size-3.5" />
+          {now
+            ? new Intl.DateTimeFormat('en-IN', {
+                timeZone: mosque.timezone,
+                hour: 'numeric',
+                minute: '2-digit',
+              }).format(now)
+            : '—'}{' '}
+          <span className="text-xs">IST</span>
+        </span>
+      </div>
+      <div className="mb-5 flex items-center justify-between gap-3 text-sm text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <MapPin size={14} />
+          {t('Durg sky', 'दुर्ग का आकाश')}
+        </span>
+        <span>
+          {sun
+            ? day
+              ? t('Sun above the horizon', 'सूर्य क्षितिज के ऊपर')
+              : t('Sun below the horizon', 'सूर्य क्षितिज के नीचे')
+            : '—'}
+        </span>
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div
           className="orbit-toggle"
           aria-label={t('Countdown target', 'उलटी गिनती का लक्ष्य')}
         >
-          {(['jamaat', 'adhan'] as const).map((v) => (
+          {(visitor
+            ? (['adhan'] as const)
+            : (['jamaat', 'adhan'] as const)
+          ).map((v) => (
             <button
               type="button"
               key={v}
@@ -122,17 +162,22 @@ export function PrayerOrbit({
         </p>
       </div>
       <div className="orbit-dial" aria-hidden="true">
-        <svg viewBox="0 0 360 332" className="w-full overflow-visible">
+        <svg viewBox="0 0 360 350" className="w-full overflow-visible">
           <defs>
+            <radialGradient id={`${id}-shade`} cx="32%" cy="28%" r="75%">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity=".16" />
+              <stop offset="55%" stopColor="#051723" stopOpacity="0" />
+              <stop offset="100%" stopColor="#020c17" stopOpacity=".75" />
+            </radialGradient>
             <radialGradient
               id={`${id}-earth`}
-              cx={`${sun ? 50 + Math.sin((sun.azimuth * Math.PI) / 180) * 35 : 30}%`}
+              cx={`${sun ? 50 + Math.sin(sun.azimuth) * 35 : 30}%`}
               cy={day ? '20%' : '75%'}
               r="80%"
             >
-              <stop offset="0%" stopColor="var(--orbit-land)" />
-              <stop offset="52%" stopColor="var(--primary)" />
-              <stop offset="100%" stopColor="var(--orbit-night)" />
+              <stop offset="0%" stopColor="#397e98" />
+              <stop offset="52%" stopColor="#15415d" />
+              <stop offset="100%" stopColor="#061a30" />
             </radialGradient>
             <radialGradient id={`${id}-sun`}>
               <stop
@@ -179,11 +224,14 @@ export function PrayerOrbit({
               />
             );
           })}
-          {prayers.map((p, i) => {
+          {prayers.map((p) => {
             const fraction = minuteOf(p[mode]) / 1440;
             const inner = point(fraction, 73),
               outer = point(fraction, 130),
-              label = point(fraction, i % 2 ? 144 : 151);
+              label = point(fraction, 145),
+              labelX = label.x < 160 ? 28 : label.x > 200 ? 332 : label.x,
+              labelAnchor =
+                label.x < 160 ? 'end' : label.x > 200 ? 'start' : 'middle';
             return (
               <g key={p.id}>
                 <title>
@@ -199,25 +247,63 @@ export function PrayerOrbit({
                   strokeDasharray="1 5"
                   strokeLinecap="round"
                 />
-                <circle
-                  cx={outer.x}
-                  cy={outer.y}
-                  r="3"
-                  fill={
-                    interval?.next.prayer.id === p.id
-                      ? 'var(--orbit-sun)'
-                      : 'var(--primary)'
-                  }
-                />
+                {p.id === 'sunrise' ||
+                p.id === 'dhuhr' ||
+                p.id === 'maghrib' ? (
+                  <g
+                    transform={`translate(${outer.x - 7},${outer.y - 7})`}
+                    fill="none"
+                    stroke={
+                      interval?.next.prayer.id === p.id
+                        ? 'var(--orbit-sun)'
+                        : 'var(--primary)'
+                    }
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  >
+                    <circle cx="7" cy="7" r="3.2" fill="var(--background)" />
+                    {p.id === 'dhuhr' ? (
+                      <>
+                        <path d="M7 1V3M7 11V13M1 7H3M11 7H13M2.7 2.7l1.4 1.4M9.9 9.9l1.4 1.4M11.3 2.7l-1.4 1.4M4.1 9.9l-1.4 1.4" />
+                      </>
+                    ) : p.id === 'sunrise' ? (
+                      <path d="M1.5 9.5h11M3.5 7.5a3.5 3.5 0 0 1 7 0M7 1v2M2.7 3.2l1.2 1.2M11.3 3.2l-1.2 1.2" />
+                    ) : (
+                      <path d="M1.5 8.5h11M3.5 6.5a3.5 3.5 0 0 1 7 0M7 1v2M2.7 2.2l1.2 1.2M11.3 2.2l-1.2 1.2" />
+                    )}
+                  </g>
+                ) : (
+                  <circle
+                    cx={outer.x}
+                    cy={outer.y}
+                    r="3"
+                    fill={
+                      interval?.next.prayer.id === p.id
+                        ? 'var(--orbit-sun)'
+                        : 'var(--primary)'
+                    }
+                  />
+                )}
                 <text
-                  x={label.x}
+                  x={labelX}
                   y={label.y}
-                  textAnchor="middle"
+                  textAnchor={labelAnchor}
                   dominantBaseline="middle"
-                  fontSize="11"
+                  fontSize="12"
                   fill="var(--muted-foreground)"
                 >
                   {name(p)}
+                </text>
+                <text
+                  x={labelX}
+                  y={label.y + 15}
+                  textAnchor={labelAnchor}
+                  dominantBaseline="middle"
+                  fontSize="10"
+                  fill="var(--muted-foreground)"
+                  opacity=".82"
+                >
+                  {time(p[mode])}
                 </text>
               </g>
             );
@@ -241,13 +327,14 @@ export function PrayerOrbit({
               <ellipse cx="180" cy="166" rx="52" ry="64" />
               <path d="M116 166H244 M124 138Q180 120 236 138 M124 194Q180 212 236 194" />
             </g>
-            <g
-              fill="var(--orbit-land)"
-              opacity=".68"
-              className="orbit-continents"
-            >
-              <path d="M129 125l15-14 20 2 6 9-7 11 9 6-4 14-15-1-6 11-15-8 3-15-10-6z M158 158l16 6 9 12-7 12-3 18-9 12-8-16-1-16-9-13z M188 119l15-7 20 8 11 14-8 12-13-2-9 10-9-4-4-15-10-7z M191 153l15 1 9 14-7 16-8 15-10-11-5-18z M223 190l11-5 14 9-7 12-16-3z" />
-            </g>
+            <image
+              href="/earth-land.svg"
+              x="116"
+              y="102"
+              width="128"
+              height="128"
+            />
+            <circle cx="180" cy="166" r="64" fill={`url(#${id}-shade)`} />
           </g>
           {now && (
             <g transform={`translate(${marker.x},${marker.y})`}>
@@ -273,7 +360,7 @@ export function PrayerOrbit({
           </text>
           <text
             x="180"
-            y="324"
+            y="344"
             textAnchor="middle"
             fontSize="10"
             letterSpacing="2"
@@ -324,27 +411,14 @@ export function PrayerOrbit({
           </span>
         </div>
       </div>
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t pt-4 text-sm text-muted-foreground">
-        <span className="flex items-center gap-1">
-          <MapPin size={14} />
-          {t('Durg sky', 'दुर्ग का आकाश')}
-        </span>
-        <span>
-          {sun
-            ? day
-              ? t('Sun above the horizon', 'सूर्य क्षितिज के ऊपर')
-              : t('Sun below the horizon', 'सूर्य क्षितिज के नीचे')
-            : '—'}
-        </span>
-      </div>
       <details className="mt-3 text-sm text-muted-foreground">
         <summary className="min-h-11 cursor-pointer py-2">
           {t('About this display', 'इस दृश्य के बारे में')}
         </summary>
         <p className="pb-2">
           {t(
-            'The dotted ring is a 24-hour clock: each spoke marks a prayer, and the glowing marker shows the current time. Globe lighting uses the estimated sun position for Durg. Calculated starts use Adhan JS (Karachi / Hanafi); mosque confirmation is pending. Jamaat times remain samples. This is not a prayer-validity guide.',
-            'बिंदुओं का घेरा 24 घंटे की घड़ी है: रेखाएँ नमाज़ों के समय और चमकता बिंदु वर्तमान समय दिखाते हैं। ग्लोब का प्रकाश दुर्ग की अनुमानित सूर्य स्थिति पर आधारित है। गणना Adhan JS (कराची / हनफ़ी) से है; मस्जिद की पुष्टि बाकी है। जमात के समय नमूने हैं। यह नमाज़ की वैध अवधि का मार्गदर्शक नहीं है।',
+            'The dotted ring is a 24-hour clock: each spoke marks a prayer, and the glowing marker shows the current time. Globe lighting uses the estimated sun position for Durg. Calculated starts follow your selected method. Jamaat times follow the mosque timetable. This is not a prayer-validity guide.',
+            'बिंदुओं का घेरा 24 घंटे की घड़ी है: रेखाएँ नमाज़ों के समय और चमकता बिंदु वर्तमान समय दिखाते हैं। ग्लोब का प्रकाश दुर्ग की अनुमानित सूर्य स्थिति पर आधारित है। गणना आपकी चुनी हुई विधि से है। जमात का समय मस्जिद की समय-सारणी के अनुसार है। यह नमाज़ की वैध अवधि का मार्गदर्शक नहीं है।',
           )}
         </p>
       </details>

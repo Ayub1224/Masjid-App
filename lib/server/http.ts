@@ -57,7 +57,7 @@ export async function boundedBody(request: Request, limit = 20000) {
   }
   return bytes;
 }
-export async function bodyJson(request: Request) {
+export async function bodyJson(request: Request, limit = 20000) {
   if (
     request.headers.get('content-type')?.split(';')[0].trim() !==
     'application/json'
@@ -66,7 +66,7 @@ export async function bodyJson(request: Request) {
   try {
     return JSON.parse(
       new TextDecoder('utf-8', { fatal: true }).decode(
-        await boundedBody(request),
+        await boundedBody(request, limit),
       ),
     );
   } catch (e) {

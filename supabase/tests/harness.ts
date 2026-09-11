@@ -23,6 +23,7 @@ export async function database() {
     '202609100007_login_guard',
     '202609100008_activity',
     '202609100009_payment_names',
+    '202609110010_mosque_details',
   ]) {
     const sql = readFileSync(`supabase/migrations/${name}.sql`, 'utf8');
     try {

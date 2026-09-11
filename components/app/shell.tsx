@@ -1,6 +1,5 @@
 'use client';
 import Link from 'next/link';
-import { SoftSelect } from './soft-select';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useEffect, useState } from 'react';
 import {
@@ -20,6 +19,7 @@ import {
   Menu,
   X,
   ArrowRight,
+  Settings,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Brand } from './brand';
@@ -31,11 +31,11 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
-import { useDemoRole, useDemoData } from './providers';
+import { useIdentity } from './providers';
 import { usePreferences } from './preferences';
-import { themes, isThemeName } from '@/config/themes';
-import { can, type Role, type Permission } from '@/lib/data/domain';
+import { can, type Permission } from '@/lib/data/domain';
 const adminNav = [
+  ['/admin/mosque', 'Mosque details', Home, 'receiving'],
   ['/admin', 'Overview', LayoutDashboard, null],
   ['/admin/members', 'Members', Users, 'members'],
   ['/admin/payments', 'Payments', ClipboardCheck, 'verify'],
@@ -51,30 +51,16 @@ export function AppShell({
   path: string;
   children: ReactNode;
 }) {
-  const { role, setRole, demo, session, logout } = useDemoRole();
-  const { language, setLanguage, theme, setTheme, t } = usePreferences();
-  const { data } = useDemoData();
+  const { role, session, logout } = useIdentity();
+  const { t } = usePreferences();
   const router = useRouter();
   const [menu, setMenu] = useState(false);
   const [signOutError, setSignOutError] = useState('');
   const admin = path.startsWith('/admin') || path.startsWith('/super-admin');
+  const canManage = ['admin', 'owner', 'super-admin'].includes(role);
+  const dashboardPath = role === 'super-admin' ? '/super-admin' : '/admin';
   const isMember = role !== 'guest' && role !== 'super-admin';
-  const grants = demo
-    ? data?.members.find((m) => m.id === 'a1')?.permissions
-    : (session?.profile?.permissions ?? []);
-  function switchRole(next: Role) {
-    setRole(next);
-    router.push(
-      next === 'guest'
-        ? '/'
-        : next === 'member'
-          ? '/home'
-          : next === 'super-admin'
-            ? '/super-admin'
-            : '/admin',
-    );
-    setMenu(false);
-  }
+  const grants = session?.profile?.permissions ?? [];
   useEffect(() => {
     const frame = requestAnimationFrame(() => setMenu(false));
     return () => cancelAnimationFrame(frame);
@@ -87,34 +73,6 @@ export function AppShell({
       >
         Skip to content
       </a>
-      {demo && (
-        <div className="border-b bg-secondary/60">
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-5 py-2 text-xs text-secondary-foreground">
-            <span className="flex items-center gap-2">
-              <span className="size-1.5 rounded-full bg-primary" />
-              {t(
-                'Frontend demo · Sample data · Resets on reload',
-                'फ़्रंटएंड डेमो · नमूना डेटा · रीलोड पर रीसेट',
-              )}
-            </span>
-            <label className="flex items-center gap-2">
-              {t('Explore as', 'डेमो भूमिका')}
-              <SoftSelect
-                label="Demo role"
-                value={role}
-                onChange={(value) => switchRole(value as Role)}
-                className="min-h-9 max-w-36 rounded-md border bg-card px-2"
-              >
-                <option value="guest">Visitor</option>
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-                <option value="owner">Owner</option>
-                <option value="super-admin">Super admin</option>
-              </SoftSelect>
-            </label>
-          </div>
-        </div>
-      )}
       <header className="border-b bg-card">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-5 py-4 sm:px-8">
           <div className="flex min-w-0 items-center gap-3">
@@ -134,25 +92,12 @@ export function AppShell({
           <div className="flex items-center gap-1 sm:gap-3">
             <Button
               variant="ghost"
-              className="h-11 px-2 sm:px-3"
-              onClick={() => setLanguage(language === 'en' ? 'hi' : 'en')}
+              className="size-11 shrink-0 px-0"
+              aria-label={t('Settings', 'सेटिंग्स')}
+              render={<Link href="/settings" />}
             >
-              {language === 'en' ? 'हिन्दी' : 'English'}
+              <Settings className="size-4" />
             </Button>
-            <SoftSelect
-              label="Color theme"
-              value={theme}
-              onChange={(v) => {
-                if (isThemeName(v)) setTheme(v);
-              }}
-              className="max-w-28"
-            >
-              {Object.entries(themes).map(([id, v]) => (
-                <option value={id} key={id}>
-                  {v.label}
-                </option>
-              ))}
-            </SoftSelect>
             {role === 'guest' && path !== '/login' && (
               <Button
                 className="size-11 shrink-0 px-0 sm:w-auto sm:px-4"
@@ -191,13 +136,22 @@ export function AppShell({
                 </Link>
               )}
               {role === 'super-admin' ? (
-                <Link
-                  href="/super-admin"
-                  className="flex min-h-12 items-center gap-3 rounded-lg bg-accent px-3 text-primary"
-                >
-                  <ShieldCheck className="size-4" />
-                  Administrators
-                </Link>
+                <>
+                  <Link
+                    href="/admin/mosque"
+                    className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm"
+                  >
+                    <Home className="size-4" />
+                    Mosque details
+                  </Link>
+                  <Link
+                    href="/super-admin"
+                    className="flex min-h-12 items-center gap-3 rounded-lg bg-accent px-3 text-primary"
+                  >
+                    <ShieldCheck className="size-4" />
+                    Administrators
+                  </Link>
+                </>
               ) : (
                 adminNav
                   .filter(
@@ -255,6 +209,23 @@ export function AppShell({
               : 'mx-auto w-full max-w-xl px-5 pb-28 pt-7 sm:px-8 sm:pt-10'
           }
         >
+          {!admin && canManage && (
+            <Link
+              href={dashboardPath}
+              className="mb-6 flex min-h-16 items-center gap-3 rounded-xl border bg-accent px-4 py-3 text-primary transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <LayoutDashboard className="size-5 shrink-0" />
+              <span className="flex-1 text-sm font-medium">
+                {role === 'super-admin'
+                  ? t(
+                      'Back to super admin dashboard',
+                      'सुपर एडमिन डैशबोर्ड पर वापस जाएँ',
+                    )
+                  : t('Back to admin dashboard', 'एडमिन डैशबोर्ड पर वापस जाएँ')}
+              </span>
+              <ArrowRight className="size-4 shrink-0" />
+            </Link>
+          )}
           {path !== '/' && (
             <Breadcrumb className="mb-6">
               <BreadcrumbList>

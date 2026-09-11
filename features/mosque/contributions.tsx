@@ -1,5 +1,5 @@
 'use client';
-import { useDemoRole } from '@/components/app/providers';
+import { useIdentity } from '@/components/app/providers';
 /* oxlint-disable next/no-img-element -- User-selected data URLs must remain local previews, without an image optimizer. */
 import Link from 'next/link';
 import { useState } from 'react';
@@ -19,7 +19,7 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from '@/components/ui/accordion';
-import { useDemoAction } from '@/components/app/providers';
+import { useMosqueAction } from '@/components/app/providers';
 import { usePreferences } from '@/components/app/preferences';
 import {
   PageTitle,
@@ -59,8 +59,8 @@ export function Contribute({
   submit?: boolean;
 }) {
   const { t } = usePreferences();
-  const mutation = useDemoAction();
-  const { demo, session } = useDemoRole();
+  const mutation = useMosqueAction();
+  const { session } = useIdentity();
   const [file, setFile] = useState<File | null>(null),
     [image, setImage] = useState(''),
     [message, setMessage] = useState(''),
@@ -107,7 +107,7 @@ export function Contribute({
               {data.receiving.image ? (
                 <img
                   src={data.receiving.image}
-                  alt="Demo receiving QR"
+                  alt="Mosque UPI payment QR code"
                   className="size-36 object-contain"
                 />
               ) : (
@@ -118,15 +118,10 @@ export function Contribute({
               )}
             </div>
             <p className="text-center text-sm text-muted-foreground">
-              {demo
-                ? t(
-                    'Payments are disabled in this demo.',
-                    'इस डेमो में भुगतान बंद है।',
-                  )
-                : t(
-                    'Pay using your UPI app, then upload the screenshot.',
-                    'UPI से भुगतान करें, फिर स्क्रीनशॉट अपलोड करें।',
-                  )}
+              {t(
+                'Pay using your UPI app, then upload the screenshot.',
+                'UPI से भुगतान करें, फिर स्क्रीनशॉट अपलोड करें।',
+              )}
             </p>
             <div className="mt-5 flex items-center justify-between rounded-lg bg-muted p-3">
               <span className="text-sm">
@@ -194,7 +189,7 @@ export function Contribute({
               await mutation.mutateAsync({
                 type: 'submit',
                 payment: {
-                  memberId: demo ? 'm1' : session!.userId,
+                  memberId: session!.userId,
                   amount,
                   date,
                   purpose: value(f, 'purpose'),
@@ -291,10 +286,8 @@ export function Contribute({
             <Feedback message={message} error />
             <p className="text-xs text-muted-foreground">
               {t(
-                demo
-                  ? 'Only sample images, please. Files stay in this browser session.'
-                  : 'Your screenshot is stored privately for payment verification.',
-                'केवल नमूना चित्र। फ़ाइलें इस ब्राउज़र सत्र में रहती हैं।',
+                'Your screenshot is stored privately for payment verification.',
+                'आपका स्क्रीनशॉट भुगतान सत्यापन के लिए निजी रूप से सहेजा जाता है।',
               )}
             </p>
           </Form>
@@ -305,11 +298,9 @@ export function Contribute({
 }
 export function Contributions({ data }: { data: DemoState }) {
   const { t } = usePreferences();
-  const { demo, session } = useDemoRole();
+  const { session } = useIdentity();
   const [filter, setFilter] = useState('all');
-  const rows = data.payments.filter(
-    (p) => p.memberId === (demo ? 'm1' : session?.userId),
-  );
+  const rows = data.payments.filter((p) => p.memberId === session?.userId);
   const verified = rows
     .filter((p) => p.status === 'verified')
     .reduce((a, p) => a + p.amount, 0);
@@ -389,7 +380,7 @@ export function Contributions({ data }: { data: DemoState }) {
                   <Button
                     variant="outline"
                     className="h-11"
-                    onClick={() => downloadReceipt(p, demo)}
+                    onClick={() => downloadReceipt(p)}
                   >
                     <FileText className="size-4" />
                     {t('Download receipt', 'नमूना रसीद डाउनलोड करें')}
@@ -414,10 +405,10 @@ export function Contributions({ data }: { data: DemoState }) {
     </>
   );
 }
-function downloadReceipt(p: Payment, demo: boolean) {
+function downloadReceipt(p: Payment) {
   const blob = new Blob(
     [
-      `${demo ? 'SAMPLE RECEIPT — NOT A REAL PAYMENT RECEIPT' : 'CONTRIBUTION ACKNOWLEDGEMENT'}\nGausul wara masjid\nReference: ${p.id}\nDate: ${p.date}\nAmount: ${money(p.amount)}\nPurpose: ${p.purpose}\nStatus: ${p.status}\n`,
+      `CONTRIBUTION ACKNOWLEDGEMENT\nGausul wara masjid\nReference: ${p.id}\nDate: ${p.date}\nAmount: ${money(p.amount)}\nPurpose: ${p.purpose}\nStatus: ${p.status}\n`,
     ],
     { type: 'text/plain' },
   );

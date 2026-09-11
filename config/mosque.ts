@@ -6,7 +6,6 @@ export const mosque = {
   // Approximate Durg locality; replace with verified mosque coordinates.
   coordinates: { latitude: 21.19, longitude: 81.28 },
   currency: 'INR',
-  demo: true,
 } as const;
 export const initialPrayers = [
   { id: 'fajr', name: 'Fajr', hindi: 'फ़ज्र', adhan: '05:00', jamaat: '05:30' },

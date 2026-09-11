@@ -144,5 +144,5 @@ it('validates PIN input and documents all current command variants', () => {
     commandSchema.options.length,
   );
   expect(spec.openapi).toBe('3.1.0');
-  expect(Object.keys(spec.paths)).toHaveLength(21);
+  expect(Object.keys(spec.paths)).toHaveLength(22);
 });

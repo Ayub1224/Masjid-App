@@ -1,17 +1,19 @@
 'use client';
 import Link from 'next/link';
+import { MosqueDetailsEditor } from '@/features/admin/mosque-details';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { ArrowRight, ShieldCheck, Check, LogOut, Download } from 'lucide-react';
+import { ArrowRight, ShieldCheck, LogOut, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppShell } from './shell';
-import { useDemoData, useDemoRole } from './providers';
+import { useMosqueData, useIdentity } from './providers';
 import { usePreferences } from './preferences';
 import { PrayerHome, MosqueSelector } from '@/features/mosque/public-home';
 import { Finance } from '@/features/mosque/finance';
 import { Contribute, Contributions } from '@/features/mosque/contributions';
 import { Login } from '@/features/mosque/auth';
+import { Settings } from '@/features/mosque/settings';
 import { MfaSetup } from '@/features/mosque/live-auth';
 import {
   AdminOverview,
@@ -28,7 +30,6 @@ import {
 import { Panel, PageTitle, Feedback } from './primitives';
 import { themes, isThemeName } from '@/config/themes';
 import { can, type Permission } from '@/lib/data/domain';
-import { initialPrayers } from '@/config/mosque';
 const routePowers: Record<string, Permission> = {
   '/admin/members': 'members',
   '/admin/payments': 'verify',
@@ -40,22 +41,26 @@ const routePowers: Record<string, Permission> = {
   '/admin/receiving': 'receiving',
 };
 export function Application({ path }: { path: string }) {
-  const query = useDemoData();
-  const { role, demo, session, logout, loading } = useDemoRole();
-  const { t, theme, setTheme } = usePreferences();
+  const query = useMosqueData();
+  const { role, session, logout, loading } = useIdentity();
+  const { t, setTheme } = usePreferences();
   const router = useRouter();
   const [signOutError, setSignOutError] = useState('');
   const data = query.data;
   const admin = path.startsWith('/admin'),
     superAdmin = path.startsWith('/super-admin');
-  const publicPath = ['/', '/login', '/forgot-password', '/invite'].includes(
-    path,
-  );
-  const grants = demo
-    ? data?.members.find((m) => m.id === 'a1')?.permissions
-    : (session?.profile?.permissions ?? []);
+  const publicPath = [
+    '/',
+    '/login',
+    '/forgot-password',
+    '/invite',
+    '/settings',
+  ].includes(path);
+  const grants = session?.profile?.permissions ?? [];
   const allowed =
     publicPath ||
+    (path === '/admin/mosque' &&
+      (role === 'super-admin' || can(role, 'receiving', grants))) ||
     (superAdmin
       ? role === 'super-admin'
       : admin
@@ -110,8 +115,9 @@ export function Application({ path }: { path: string }) {
     return () => controller.abort();
   }, [setTheme]);
   let content;
-  if (loading) content = <Skeleton className="h-48 w-full" />;
-  else if (!demo && ['/login', '/forgot-password', '/invite'].includes(path))
+  if (path === '/settings') content = <Settings />;
+  else if (loading) content = <Skeleton className="h-48 w-full" />;
+  else if (['/login', '/forgot-password', '/invite'].includes(path))
     content = (
       <Login
         recover={path === '/forgot-password'}
@@ -119,7 +125,6 @@ export function Application({ path }: { path: string }) {
       />
     );
   else if (
-    !demo &&
     (admin || superAdmin) &&
     (role === 'owner' || role === 'super-admin') &&
     session?.profile?.active &&
@@ -131,12 +136,8 @@ export function Application({ path }: { path: string }) {
       <div className="mx-auto max-w-md py-12 text-center">
         <ShieldCheck className="mx-auto mb-6 size-10 text-primary" />
         <PageTitle
-          title={demo ? 'Choose a demo role' : 'Sign in to continue'}
-          description={
-            demo
-              ? 'Use the demo selector above to explore this area.'
-              : 'This page requires an active account with the appropriate permission.'
-          }
+          title="Sign in to continue"
+          description="This page requires an active account with the appropriate permission."
         />
         <Button
           variant="outline"
@@ -146,6 +147,18 @@ export function Application({ path }: { path: string }) {
           Sign in
         </Button>
       </div>
+    );
+  else if (path === '/admin/mosque') content = <MosqueDetailsEditor />;
+  else if (path === '/')
+    content = (
+      <>
+        <MosqueSelector />
+        <PrayerHome
+          prayers={query.data?.prayers ?? []}
+          notices={query.data?.notices ?? []}
+          visitor
+        />
+      </>
     );
   else if (query.isPending)
     content = (
@@ -177,7 +190,7 @@ export function Application({ path }: { path: string }) {
               <p className="mb-2 text-xs uppercase tracking-[.16em] text-muted-foreground">
                 {t(
                   path === '/home'
-                    ? `Assalamu alaikum, ${session?.profile?.name ?? 'Sample Member'}`
+                    ? `Assalamu alaikum, ${session?.profile?.name ?? 'Member'}`
                     : 'Your local mosque',
                   path === '/home' ? 'अस्सलामु अलैकुम, सदस्य' : 'आपकी स्थानीय मस्जिद',
                 )}
@@ -186,15 +199,12 @@ export function Application({ path }: { path: string }) {
             </div>
             <PrayerHome
               member={path === '/home'}
-              prayers={data.prayers.length ? data.prayers : initialPrayers}
+              prayers={data.prayers}
               notices={data.notices}
-              estimated={data.prayers.length === 0}
             />
             {path === '/home' &&
               data.payments.some(
-                (p) =>
-                  p.memberId === (demo ? 'm1' : session?.userId) &&
-                  p.status === 'pending',
+                (p) => p.memberId === session?.userId && p.status === 'pending',
               ) && (
                 <Link
                   href="/contributions"
@@ -239,39 +249,22 @@ export function Application({ path }: { path: string }) {
                 </span>
                 <div>
                   <p className="font-medium">
-                    {session?.profile?.name ?? 'Sample Member'}
+                    {session?.profile?.name ?? 'Member'}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {session?.profile?.email ?? 'member@example.com'}
+                    {session?.profile?.email ?? ''}
                   </p>
                 </div>
               </div>
             </Panel>
-            <div className="mt-6">
-              <PageTitle title={t('Make it yours', 'अपना रंग चुनें')} />
-              <div className="space-y-3">
-                {Object.entries(themes).map(([id, v]) => (
-                  <button
-                    key={id}
-                    onClick={() => setTheme(id as keyof typeof themes)}
-                    className={`flex min-h-20 w-full items-center gap-4 rounded-xl border bg-card p-4 text-left ${theme === id ? 'border-primary ring-1 ring-primary' : ''}`}
-                    aria-pressed={theme === id}
-                  >
-                    <span
-                      className="size-10 rounded-full"
-                      style={{ background: v.colors.primary }}
-                    />
-                    <span className="flex-1">
-                      <span className="block font-medium">{v.label}</span>
-                      <span className="text-sm text-muted-foreground">
-                        {v.description}
-                      </span>
-                    </span>
-                    {theme === id && <Check className="size-5 text-primary" />}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <Button
+              variant="outline"
+              className="mt-6 h-14 w-full justify-between"
+              render={<Link href="/settings" />}
+            >
+              {t('Settings', 'सेटिंग्स')}
+              <ArrowRight className="size-4" />
+            </Button>
             <Button
               variant="outline"
               className="mt-7 h-12 w-full"
@@ -290,6 +283,9 @@ export function Application({ path }: { path: string }) {
             <Feedback message={signOutError} error />
           </>
         );
+        break;
+      case '/settings':
+        content = <Settings />;
         break;
       case '/admin':
         content = <AdminOverview data={data} />;

@@ -1,3 +1,4 @@
+import { mosqueDetailsSchema } from '../lib/mosque-details';
 import { createServer } from 'node:http';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -62,7 +63,19 @@ export async function handle(request: Request): Promise<Response> {
       throw new ApiError(405, 'METHOD_NOT_ALLOWED');
     if (post) sameOrigin(request, origin);
     if (path === 'settings' && !post)
-      return json({ demo: false, local: true, turnstileSiteKey: '' });
+      return json({ local: true, turnstileSiteKey: '' });
+    if (path === 'mosque' && !post)
+      return json(
+        await asUser(
+          null,
+          async (db) =>
+            (
+              await db.query(
+                'select name,address,latitude,longitude,picture from mosque_details',
+              )
+            ).rows[0] ?? null,
+        ),
+      );
     if (path === 'public' && !post)
       return json(
         await asUser(null, async (db) => ({
@@ -222,6 +235,13 @@ export async function handle(request: Request): Promise<Response> {
       );
     }
     const user = await identity(request);
+    if (path === 'mosque' && post) {
+      const input = mosqueDetailsSchema.parse(await bodyJson(request, 720000));
+      await asUser(user, (db) =>
+        db.query('select mosque_save_details($1)', [input]),
+      );
+      return json({ ok: true });
+    }
     if (path === 'auth/refresh' && post) return json({ ok: true });
     if (path === 'auth/logout' && post) {
       await pool.query('delete from auth.sessions where user_id=$1', [

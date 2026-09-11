@@ -2,9 +2,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/data/api';
-import { useDemoRole } from '@/components/app/providers';
+import { useIdentity } from '@/components/app/providers';
 import {
-  Back,
   Field,
   Form,
   Panel,
@@ -21,7 +20,7 @@ export function LocalLogin({
   invite?: boolean;
 }) {
   const router = useRouter();
-  const { session, reload } = useDemoRole();
+  const { session, reload } = useIdentity();
   const [identifier, setIdentifier] = useState(''),
     [method, setMethod] = useState<Method | null>(null),
     [invitation, setInvitation] = useState(''),
@@ -108,7 +107,6 @@ export function LocalLogin({
       : `${method?.digits ?? 4}-digit PIN`;
   return (
     <>
-      <Back />
       <PageTitle
         title={
           recover
@@ -156,10 +154,7 @@ export function LocalLogin({
             }
             const raw = f.get('credential');
             const secret = typeof raw === 'string' ? raw : '';
-            if (
-              (invite || ready) &&
-              secret !== f.get('confirmation')
-            )
+            if ((invite || ready) && secret !== f.get('confirmation'))
               throw Error(`${label}s do not match.`);
             const value =
               method.kind === 'password'

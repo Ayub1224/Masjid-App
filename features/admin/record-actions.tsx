@@ -4,15 +4,15 @@ import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/data/api';
 import type { Member, Expense, Notice } from '@/lib/data/domain';
 import { parseAmount } from '@/lib/data/domain';
-import { useDemoRole } from '@/components/app/providers';
+import { useIdentity } from '@/components/app/providers';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Modal, Form, Field, Choice } from '@/components/app/primitives';
 export function OpeningBalance() {
-  const { role, demo } = useDemoRole();
+  const { role } = useIdentity();
   const cache = useQueryClient();
   const [open, setOpen] = useState(false);
-  if (demo || role !== 'owner') return null;
+  if (role !== 'owner') return null;
   return (
     <>
       <Button
@@ -77,11 +77,9 @@ export function RecordActions({
   record: Member | Expense | Notice;
   kind: 'member' | 'expense' | 'notice';
 }) {
-  const { demo } = useDemoRole();
   const cache = useQueryClient();
   const [mode, setMode] = useState<'edit' | 'delete' | null>(null);
   if (
-    demo ||
     (kind === 'member' && (record as Member).status === 'invited') ||
     (kind === 'expense' && (record as Expense).status !== 'draft')
   )
