@@ -8,10 +8,20 @@ export function config() {
     throw new ApiError(503, 'BACKEND_NOT_CONFIGURED');
   // Require the current publishable key format; a secret/service-role key must never enable this client.
   if (!/^sb_publishable_[A-Za-z0-9_-]+$/.test(key)) throw new ApiError(503,'PUBLISHABLE_KEY_REQUIRED');
+  let parsedOrigin: URL;
+  try {
+    parsedOrigin = new URL(origin);
+  } catch {
+    throw new ApiError(503, 'BACKEND_CONFIGURATION_INVALID');
+  }
+  const isLocalDevelopmentOrigin =
+    process.env.NODE_ENV !== 'production' &&
+    (parsedOrigin.origin === 'http://localhost:3000' ||
+      parsedOrigin.origin === 'http://127.0.0.1:3000');
   if (
     !/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(url) ||
-    new URL(origin).origin !== origin ||
-    !origin.startsWith('https://')
+    parsedOrigin.origin !== origin ||
+    (!origin.startsWith('https://') && !isLocalDevelopmentOrigin)
   )
     throw new ApiError(503, 'BACKEND_CONFIGURATION_INVALID');
   return { url, key, origin };

@@ -13,14 +13,27 @@ import { usePreferences } from '@/components/app/preferences';
 export function Finance({ data }: { data: DemoState }) {
   const { t } = usePreferences();
   const b = balances(data);
-  const [month, setMonth] = useState('2026-09');
-  const receipts = data.payments
-    .filter((p) => p.status === 'verified' && p.date.startsWith(month))
-    .reduce((a, p) => a + p.amount, 0);
-  const paid = data.expenses.filter(
-    (e) => e.status === 'paid' && e.date.startsWith(month),
+  const [month, setMonth] = useState(
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' })
+      .format(new Date())
+      .slice(0, 7),
   );
-  const expenses = paid.reduce((a, e) => a + e.amount, 0);
+  const receipts = data.monthly
+    ? Number(data.monthly.find((m) => m.month === month)?.receipts ?? 0)
+    : data.payments
+        .filter((p) => p.status === 'verified' && p.date.startsWith(month))
+        .reduce((a, p) => a + p.amount, 0);
+  const paid = data.expenses.filter(
+    (e) =>
+      (e.status === 'paid' || (!!data.monthly && e.status === 'reversed')) &&
+      e.date.startsWith(month),
+  );
+  const expenses = data.monthly
+    ? Number(data.monthly.find((m) => m.month === month)?.expenses ?? 0)
+    : paid.reduce((a, e) => a + e.amount, 0);
+  const adjustments = Number(
+    data.monthly?.find((m) => m.month === month)?.adjustments ?? 0,
+  );
   return (
     <>
       <PageTitle title={t('Mosque finances', 'मस्जिद का वित्त')} />
@@ -34,7 +47,9 @@ export function Finance({ data }: { data: DemoState }) {
           </p>
           <p className="text-xs opacity-80">
             {t(
-              'Sample register · Opening balance on 1 Sep 2026',
+              data.balance
+                ? 'Recorded transactions'
+                : 'Sample register · Opening balance on 1 Sep 2026',
               'नमूना रजिस्टर · प्रारंभिक राशि 1 सितंबर 2026',
             )}
           </p>
@@ -76,6 +91,16 @@ export function Finance({ data }: { data: DemoState }) {
             />
           </label>
           <div className="space-y-4">
+            {!!data.monthly?.find((m) => m.month === month)?.adjustments && (
+              <p>
+                Reversal adjustments:{' '}
+                {money(
+                  Number(
+                    data.monthly.find((m) => m.month === month)?.adjustments,
+                  ),
+                )}
+              </p>
+            )}
             <div className="flex justify-between">
               <span className="flex items-center gap-2">
                 <ArrowDownLeft className="size-4 text-success" />
@@ -92,7 +117,7 @@ export function Finance({ data }: { data: DemoState }) {
             </div>
             <div className="flex justify-between border-t pt-4">
               <span>{t('Net movement', 'शुद्ध बदलाव')}</span>
-              <strong>{money(receipts - expenses)}</strong>
+              <strong>{money(receipts - expenses + adjustments)}</strong>
             </div>
           </div>
         </Disclosure>

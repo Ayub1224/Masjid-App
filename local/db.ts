@@ -1,0 +1,45 @@
+import pg from 'pg';
+// Business dates are calendar dates, not timestamps in the server timezone.
+pg.types.setTypeParser(1082, (value) => value);
+export const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 10,
+});
+export type Identity = {
+  id: string;
+  user_id: string;
+  aal: string;
+  email: string;
+  recovery: boolean;
+};
+export async function asUser<T>(
+  session: Identity | null,
+  run: (db: pg.PoolClient) => Promise<T>,
+): Promise<T> {
+  const db = await pool.connect();
+  try {
+    await db.query('begin');
+    await db.query(
+      "select set_config('request.jwt.claim.sub',$1,true),set_config('request.jwt.claims',$2,true)",
+      [
+        session?.user_id ?? '',
+        JSON.stringify(
+          session
+            ? { sub: session.user_id, session_id: session.id, aal: session.aal }
+            : {},
+        ),
+      ],
+    );
+    await db.query(
+      session ? 'set local role authenticated' : 'set local role anon',
+    );
+    const result = await run(db);
+    await db.query('commit');
+    return result;
+  } catch (e) {
+    await db.query('rollback');
+    throw e;
+  } finally {
+    db.release();
+  }
+}

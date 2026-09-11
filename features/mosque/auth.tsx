@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { LiveLogin } from './live-auth';
 import { useRouter } from 'next/navigation';
 import { Mail, ShieldCheck, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -23,9 +24,10 @@ export function Login({
 }) {
   const [show, setShow] = useState(false),
     [notice, setNotice] = useState('');
-  const { setRole } = useDemoRole();
+  const { setRole, demo } = useDemoRole();
   const router = useRouter();
   const { t } = usePreferences();
+  if (!demo) return <LiveLogin recover={recover} invite={invite} />;
   return (
     <>
       <Back />

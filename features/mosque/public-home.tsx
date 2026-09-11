@@ -34,12 +34,15 @@ export function PrayerHome({
   member = false,
   prayers = initialPrayers,
   notices = [],
+  estimated = false,
 }: {
   member?: boolean;
   prayers?: Prayer[];
   notices?: Notice[];
+  estimated?: boolean;
 }) {
   const { t, language } = usePreferences();
+  const timetable = prayers.length ? prayers : initialPrayers;
   const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
@@ -55,15 +58,15 @@ export function PrayerHome({
   const calendar = useMemo(
     () =>
       date && source === 'calculated'
-        ? scheduleCalendar(date, prayers)
+        ? scheduleCalendar(date, timetable)
         : undefined,
-    [date, source, prayers],
+    [date, source, timetable],
   );
   const shownPrayers =
-    calendar?.find((d) => d.offset === 0)?.prayers ?? prayers;
+    calendar?.find((d) => d.offset === 0)?.prayers ?? timetable;
   const next = now
     ? nextPrayer(shownPrayers, now)
-    : { prayer: prayers[1], tomorrow: false };
+    : { prayer: timetable[1], tomorrow: false };
   const p = next.prayer;
   return (
     <div className="space-y-5">
@@ -103,7 +106,7 @@ export function PrayerHome({
           )}
         </option>
         <option value="mosque">
-          {t('Mosque timetable · Demo', 'मस्जिद समय-सारणी · डेमो')}
+          {t('Mosque timetable', 'मस्जिद समय-सारणी · डेमो')}
         </option>
       </SoftSelect>
       <PrayerOrbit
@@ -112,6 +115,11 @@ export function PrayerHome({
         calendar={calendar}
         calculated={source === 'calculated'}
       />
+      {estimated && (
+        <p className="mt-3 text-center text-xs text-muted-foreground">
+          General prayer times shown until the mosque publishes its Jamaat timetable.
+        </p>
+      )}
       <Accordion className="overflow-hidden rounded-xl border bg-card">
         <AccordionItem value="prayers">
           <AccordionTrigger className="items-center px-5 py-5 text-base hover:no-underline">

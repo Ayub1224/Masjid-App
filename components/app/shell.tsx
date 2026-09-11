@@ -51,14 +51,17 @@ export function AppShell({
   path: string;
   children: ReactNode;
 }) {
-  const { role, setRole } = useDemoRole();
+  const { role, setRole, demo, session, logout } = useDemoRole();
   const { language, setLanguage, theme, setTheme, t } = usePreferences();
   const { data } = useDemoData();
   const router = useRouter();
   const [menu, setMenu] = useState(false);
+  const [signOutError, setSignOutError] = useState('');
   const admin = path.startsWith('/admin') || path.startsWith('/super-admin');
   const isMember = role !== 'guest' && role !== 'super-admin';
-  const grants = data?.members.find((m) => m.id === 'a1')?.permissions;
+  const grants = demo
+    ? data?.members.find((m) => m.id === 'a1')?.permissions
+    : (session?.profile?.permissions ?? []);
   function switchRole(next: Role) {
     setRole(next);
     router.push(
@@ -84,32 +87,34 @@ export function AppShell({
       >
         Skip to content
       </a>
-      <div className="border-b bg-secondary/60">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-5 py-2 text-xs text-secondary-foreground">
-          <span className="flex items-center gap-2">
-            <span className="size-1.5 rounded-full bg-primary" />
-            {t(
-              'Frontend demo · Sample data · Resets on reload',
-              'फ़्रंटएंड डेमो · नमूना डेटा · रीलोड पर रीसेट',
-            )}
-          </span>
-          <label className="flex items-center gap-2">
-            {t('Explore as', 'डेमो भूमिका')}
-            <SoftSelect
-              label="Demo role"
-              value={role}
-              onChange={(value) => switchRole(value as Role)}
-              className="min-h-9 max-w-36 rounded-md border bg-card px-2"
-            >
-              <option value="guest">Visitor</option>
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-              <option value="owner">Owner</option>
-              <option value="super-admin">Super admin</option>
-            </SoftSelect>
-          </label>
+      {demo && (
+        <div className="border-b bg-secondary/60">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-5 py-2 text-xs text-secondary-foreground">
+            <span className="flex items-center gap-2">
+              <span className="size-1.5 rounded-full bg-primary" />
+              {t(
+                'Frontend demo · Sample data · Resets on reload',
+                'फ़्रंटएंड डेमो · नमूना डेटा · रीलोड पर रीसेट',
+              )}
+            </span>
+            <label className="flex items-center gap-2">
+              {t('Explore as', 'डेमो भूमिका')}
+              <SoftSelect
+                label="Demo role"
+                value={role}
+                onChange={(value) => switchRole(value as Role)}
+                className="min-h-9 max-w-36 rounded-md border bg-card px-2"
+              >
+                <option value="guest">Visitor</option>
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+                <option value="owner">Owner</option>
+                <option value="super-admin">Super admin</option>
+              </SoftSelect>
+            </label>
+          </div>
         </div>
-      </div>
+      )}
       <header className="border-b bg-card">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-5 py-4 sm:px-8">
           <div className="flex min-w-0 items-center gap-3">
@@ -150,10 +155,13 @@ export function AppShell({
             </SoftSelect>
             {role === 'guest' && path !== '/login' && (
               <Button
-                className="hidden h-11 px-4 sm:inline-flex"
+                className="size-11 shrink-0 px-0 sm:w-auto sm:px-4"
+                aria-label={t('Member login', 'सदस्य लॉगिन')}
                 render={<Link href="/login" />}
               >
-                {t('Member login', 'सदस्य लॉगिन')}
+                <span className="hidden sm:inline">
+                  {t('Member login', 'सदस्य लॉगिन')}
+                </span>
                 <ArrowRight />
               </Button>
             )}
@@ -173,6 +181,15 @@ export function AppShell({
                 : 'Mosque management'}
             </p>
             <nav className="space-y-1">
+              {role === 'owner' && (
+                <Link
+                  href="/admin/administrators"
+                  className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm"
+                >
+                  <ShieldCheck className="size-4" />
+                  Administrators
+                </Link>
+              )}
               {role === 'super-admin' ? (
                 <Link
                   href="/super-admin"
@@ -209,11 +226,23 @@ export function AppShell({
               <Button
                 variant="ghost"
                 className="h-11 w-full justify-start gap-3 px-3"
-                onClick={() => switchRole('guest')}
+                onClick={async () => {
+                  try {
+                    await logout();
+                    router.push('/');
+                  } catch (error) {
+                    setSignOutError((error as Error).message);
+                  }
+                }}
               >
                 <LogOut className="size-4" />
-                Leave demo role
+                Sign out
               </Button>
+              {signOutError && (
+                <p role="alert" className="mt-3 text-sm text-destructive">
+                  {signOutError}
+                </p>
+              )}
             </div>
           </aside>
         )}
@@ -234,7 +263,13 @@ export function AppShell({
                     render={
                       <Link
                         href={
-                          role === 'guest' ? '/' : isMember ? '/home' : '/admin'
+                          role === 'guest'
+                            ? '/'
+                            : role === 'super-admin'
+                              ? '/super-admin'
+                              : role === 'member'
+                                ? '/home'
+                                : '/admin'
                         }
                       />
                     }

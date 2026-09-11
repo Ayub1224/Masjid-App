@@ -5,7 +5,7 @@ import { AppProviders } from '@/components/app/providers';
 export const metadata: Metadata = {
   title: 'Gausul wara masjid | Mosque-app',
   description:
-    'Prayer times and community contributions for Gausul wara masjid, Durg. Frontend preview.',
+    'Prayer times and community contributions for Gausul wara masjid, Durg.',
 };
 export default function RootLayout({
   children,

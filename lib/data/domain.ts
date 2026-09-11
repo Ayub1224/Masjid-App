@@ -44,6 +44,7 @@ export type Payment = {
   reason?: string;
   evidence?: string;
   evidenceName?: string;
+  evidencePath?: string;
 };
 export type Expense = {
   id: string;
@@ -73,6 +74,7 @@ export type BalanceCheck = {
   note: string;
 };
 export type DemoState = {
+  memberNames?: Record<string, string>;
   members: Member[];
   payments: Payment[];
   expenses: Expense[];
@@ -80,7 +82,19 @@ export type DemoState = {
   notices: Notice[];
   checks: BalanceCheck[];
   audit: string[];
-  receiving: { upi: string; recipient: string; image?: string };
+  receiving: {
+    upi: string;
+    recipient: string;
+    image?: string;
+    qrPath?: string;
+  };
+  balance?: { bank: number; cash: number; total: number };
+  monthly?: {
+    month: string;
+    receipts: number;
+    expenses: number;
+    adjustments: number;
+  }[];
   transfers: { amount: number; date: string }[];
 };
 export function createSeed(): DemoState {
@@ -271,6 +285,7 @@ export function parseAmount(value: string) {
   return amount;
 }
 export function balances(s: DemoState) {
+  if (s.balance) return s.balance;
   let bank = 1400000,
     cash = 600000;
   for (const p of s.payments)

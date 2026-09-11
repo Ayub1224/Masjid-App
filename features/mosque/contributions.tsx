@@ -1,4 +1,5 @@
 'use client';
+import { useDemoRole } from '@/components/app/providers';
 /* oxlint-disable next/no-img-element -- User-selected data URLs must remain local previews, without an image optimizer. */
 import Link from 'next/link';
 import { useState } from 'react';
@@ -59,6 +60,7 @@ export function Contribute({
 }) {
   const { t } = usePreferences();
   const mutation = useDemoAction();
+  const { demo, session } = useDemoRole();
   const [file, setFile] = useState<File | null>(null),
     [image, setImage] = useState(''),
     [message, setMessage] = useState(''),
@@ -73,7 +75,7 @@ export function Contribute({
         <Status status="pending" />
         <p className="my-6 text-muted-foreground">
           {t(
-            'Your sample submission is ready for admin review.',
+            'Your submission is ready for admin review.',
             'आपका नमूना भुगतान व्यवस्थापक समीक्षा के लिए तैयार है।',
           )}
         </p>
@@ -116,7 +118,15 @@ export function Contribute({
               )}
             </div>
             <p className="text-center text-sm text-muted-foreground">
-              {t('Payments are disabled in this demo.', 'इस डेमो में भुगतान बंद है।')}
+              {demo
+                ? t(
+                    'Payments are disabled in this demo.',
+                    'इस डेमो में भुगतान बंद है।',
+                  )
+                : t(
+                    'Pay using your UPI app, then upload the screenshot.',
+                    'UPI से भुगतान करें, फिर स्क्रीनशॉट अपलोड करें।',
+                  )}
             </p>
             <div className="mt-5 flex items-center justify-between rounded-lg bg-muted p-3">
               <span className="text-sm">
@@ -184,7 +194,7 @@ export function Contribute({
               await mutation.mutateAsync({
                 type: 'submit',
                 payment: {
-                  memberId: 'm1',
+                  memberId: demo ? 'm1' : session!.userId,
                   amount,
                   date,
                   purpose: value(f, 'purpose'),
@@ -209,7 +219,9 @@ export function Contribute({
               name="date"
               type="date"
               required
-              defaultValue="2026-09-08"
+              defaultValue={new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Asia/Kolkata',
+              }).format(new Date())}
             />
             <Field label={t('Purpose', 'उद्देश्य')} name="purpose">
               <Choice name="purpose">
@@ -279,7 +291,9 @@ export function Contribute({
             <Feedback message={message} error />
             <p className="text-xs text-muted-foreground">
               {t(
-                'Only sample images, please. Files stay in this browser session.',
+                demo
+                  ? 'Only sample images, please. Files stay in this browser session.'
+                  : 'Your screenshot is stored privately for payment verification.',
                 'केवल नमूना चित्र। फ़ाइलें इस ब्राउज़र सत्र में रहती हैं।',
               )}
             </p>
@@ -291,8 +305,11 @@ export function Contribute({
 }
 export function Contributions({ data }: { data: DemoState }) {
   const { t } = usePreferences();
+  const { demo, session } = useDemoRole();
   const [filter, setFilter] = useState('all');
-  const rows = data.payments.filter((p) => p.memberId === 'm1');
+  const rows = data.payments.filter(
+    (p) => p.memberId === (demo ? 'm1' : session?.userId),
+  );
   const verified = rows
     .filter((p) => p.status === 'verified')
     .reduce((a, p) => a + p.amount, 0);
@@ -372,10 +389,10 @@ export function Contributions({ data }: { data: DemoState }) {
                   <Button
                     variant="outline"
                     className="h-11"
-                    onClick={() => downloadReceipt(p)}
+                    onClick={() => downloadReceipt(p, demo)}
                   >
                     <FileText className="size-4" />
-                    {t('Download sample receipt', 'नमूना रसीद डाउनलोड करें')}
+                    {t('Download receipt', 'नमूना रसीद डाउनलोड करें')}
                   </Button>
                 )}
                 {p.status === 'rejected' && (
@@ -397,17 +414,17 @@ export function Contributions({ data }: { data: DemoState }) {
     </>
   );
 }
-function downloadReceipt(p: Payment) {
+function downloadReceipt(p: Payment, demo: boolean) {
   const blob = new Blob(
     [
-      `SAMPLE RECEIPT — NOT A REAL PAYMENT RECEIPT\nGausul wara masjid\nReference: ${p.id}\nDate: ${p.date}\nAmount: ${money(p.amount)}\nPurpose: ${p.purpose}\nStatus: ${p.status}\n`,
+      `${demo ? 'SAMPLE RECEIPT — NOT A REAL PAYMENT RECEIPT' : 'CONTRIBUTION ACKNOWLEDGEMENT'}\nGausul wara masjid\nReference: ${p.id}\nDate: ${p.date}\nAmount: ${money(p.amount)}\nPurpose: ${p.purpose}\nStatus: ${p.status}\n`,
     ],
     { type: 'text/plain' },
   );
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `sample-receipt-${p.id}.txt`;
+  a.download = `receipt-${p.id}.txt`;
   a.click();
   URL.revokeObjectURL(url);
 }

@@ -217,7 +217,7 @@ export function Modal({
       <DialogContent className="max-h-[90dvh] overflow-y-auto p-6 sm:max-w-lg">
         <DialogTitle className="pr-7 text-2xl">{title}</DialogTitle>
         <DialogDescription>
-          {description ?? 'Changes apply to this sample frontend only.'}
+          {description ?? 'Review the details before saving.'}
         </DialogDescription>
         {children}
       </DialogContent>

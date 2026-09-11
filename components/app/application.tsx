@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowRight, ShieldCheck, Check, LogOut, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -12,6 +12,7 @@ import { PrayerHome, MosqueSelector } from '@/features/mosque/public-home';
 import { Finance } from '@/features/mosque/finance';
 import { Contribute, Contributions } from '@/features/mosque/contributions';
 import { Login } from '@/features/mosque/auth';
+import { MfaSetup } from '@/features/mosque/live-auth';
 import {
   AdminOverview,
   Members,
@@ -27,6 +28,7 @@ import {
 import { Panel, PageTitle, Feedback } from './primitives';
 import { themes, isThemeName } from '@/config/themes';
 import { can, type Permission } from '@/lib/data/domain';
+import { initialPrayers } from '@/config/mosque';
 const routePowers: Record<string, Permission> = {
   '/admin/members': 'members',
   '/admin/payments': 'verify',
@@ -39,22 +41,26 @@ const routePowers: Record<string, Permission> = {
 };
 export function Application({ path }: { path: string }) {
   const query = useDemoData();
-  const { role, setRole } = useDemoRole();
+  const { role, demo, session, logout, loading } = useDemoRole();
   const { t, theme, setTheme } = usePreferences();
   const router = useRouter();
+  const [signOutError, setSignOutError] = useState('');
   const data = query.data;
   const admin = path.startsWith('/admin'),
     superAdmin = path.startsWith('/super-admin');
   const publicPath = ['/', '/login', '/forgot-password', '/invite'].includes(
     path,
   );
-  const grants = data?.members.find((m) => m.id === 'a1')?.permissions;
+  const grants = demo
+    ? data?.members.find((m) => m.id === 'a1')?.permissions
+    : (session?.profile?.permissions ?? []);
   const allowed =
     publicPath ||
     (superAdmin
       ? role === 'super-admin'
       : admin
         ? (role === 'admin' || role === 'owner') &&
+          (path !== '/admin/administrators' || role === 'owner') &&
           (!routePowers[path] || can(role, routePowers[path], grants))
         : role !== 'guest' && role !== 'super-admin');
   useEffect(() => {
@@ -104,16 +110,40 @@ export function Application({ path }: { path: string }) {
     return () => controller.abort();
   }, [setTheme]);
   let content;
-  if (!allowed)
+  if (loading) content = <Skeleton className="h-48 w-full" />;
+  else if (!demo && ['/login', '/forgot-password', '/invite'].includes(path))
+    content = (
+      <Login
+        recover={path === '/forgot-password'}
+        invite={path === '/invite'}
+      />
+    );
+  else if (
+    !demo &&
+    (admin || superAdmin) &&
+    (role === 'owner' || role === 'super-admin') &&
+    session?.profile?.active &&
+    session.aal !== 'aal2'
+  )
+    content = <MfaSetup />;
+  else if (!allowed)
     content = (
       <div className="mx-auto max-w-md py-12 text-center">
         <ShieldCheck className="mx-auto mb-6 size-10 text-primary" />
         <PageTitle
-          title="Choose a demo role"
-          description="This area is available to a different role. Use the demo selector above to explore it."
+          title={demo ? 'Choose a demo role' : 'Sign in to continue'}
+          description={
+            demo
+              ? 'Use the demo selector above to explore this area.'
+              : 'This page requires an active account with the appropriate permission.'
+          }
         />
-        <Button variant="outline" className="h-12" render={<Link href="/" />}>
-          Return home
+        <Button
+          variant="outline"
+          className="h-12"
+          render={<Link href="/login" />}
+        >
+          Sign in
         </Button>
       </div>
     );
@@ -128,7 +158,10 @@ export function Application({ path }: { path: string }) {
   else if (query.isError || !data)
     content = (
       <Panel>
-        <Feedback message="Unable to load sample data." error />
+        <Feedback
+          message={query.error?.message ?? 'Unable to load mosque records.'}
+          error
+        />
         <Button onClick={() => query.refetch()} className="mt-4 h-11">
           Retry
         </Button>
@@ -144,7 +177,7 @@ export function Application({ path }: { path: string }) {
               <p className="mb-2 text-xs uppercase tracking-[.16em] text-muted-foreground">
                 {t(
                   path === '/home'
-                    ? 'Assalamu alaikum, Sample Member'
+                    ? `Assalamu alaikum, ${session?.profile?.name ?? 'Sample Member'}`
                     : 'Your local mosque',
                   path === '/home' ? 'अस्सलामु अलैकुम, सदस्य' : 'आपकी स्थानीय मस्जिद',
                 )}
@@ -153,12 +186,15 @@ export function Application({ path }: { path: string }) {
             </div>
             <PrayerHome
               member={path === '/home'}
-              prayers={data.prayers}
+              prayers={data.prayers.length ? data.prayers : initialPrayers}
               notices={data.notices}
+              estimated={data.prayers.length === 0}
             />
             {path === '/home' &&
               data.payments.some(
-                (p) => p.memberId === 'm1' && p.status === 'pending',
+                (p) =>
+                  p.memberId === (demo ? 'm1' : session?.userId) &&
+                  p.status === 'pending',
               ) && (
                 <Link
                   href="/contributions"
@@ -202,9 +238,11 @@ export function Application({ path }: { path: string }) {
                   SM
                 </span>
                 <div>
-                  <p className="font-medium">Sample Member</p>
+                  <p className="font-medium">
+                    {session?.profile?.name ?? 'Sample Member'}
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    member@example.com
+                    {session?.profile?.email ?? 'member@example.com'}
                   </p>
                 </div>
               </div>
@@ -237,14 +275,19 @@ export function Application({ path }: { path: string }) {
             <Button
               variant="outline"
               className="mt-7 h-12 w-full"
-              onClick={() => {
-                setRole('guest');
-                router.push('/');
+              onClick={async () => {
+                try {
+                  await logout();
+                  router.push('/');
+                } catch (error) {
+                  setSignOutError((error as Error).message);
+                }
               }}
             >
               <LogOut />
-              Leave member demo
+              Sign out
             </Button>
+            <Feedback message={signOutError} error />
           </>
         );
         break;
@@ -265,7 +308,7 @@ export function Application({ path }: { path: string }) {
                 onClick={() => exportPayments(data)}
               >
                 <Download />
-                Export sample CSV
+                Export CSV
               </Button>
             )}
           </>
@@ -289,6 +332,7 @@ export function Application({ path }: { path: string }) {
       case '/admin/receiving':
         content = <Receiving data={data} />;
         break;
+      case '/admin/administrators':
       case '/super-admin':
         content = <Members data={data} administrators />;
         break;

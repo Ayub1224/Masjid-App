@@ -1,4 +1,7 @@
 'use client';
+import { api, invitationLinks } from '@/lib/data/api';
+import { RecordActions, OpeningBalance } from './record-actions';
+import { initialPrayers } from '@/config/mosque';
 /* oxlint-disable next/no-img-element -- User-selected data URLs must remain local previews, without an image optimizer. */
 import Link from 'next/link';
 import { useState } from 'react';
@@ -53,8 +56,10 @@ import { readImage } from '@/features/mosque/contributions';
 export function AdminOverview({ data }: { data: DemoState }) {
   const b = balances(data);
   const pending = data.payments.filter((p) => p.status === 'pending');
-  const { role } = useDemoRole();
-  const grants = data.members.find((m) => m.id === 'a1')?.permissions;
+  const { role, demo, session } = useDemoRole();
+  const grants = demo
+    ? data.members.find((m) => m.id === 'a1')?.permissions
+    : (session?.profile?.permissions ?? []);
   return (
     <>
       <PageTitle
@@ -155,13 +160,12 @@ export function AdminOverview({ data }: { data: DemoState }) {
             </ul>
           ) : (
             <p className="text-muted-foreground">
-              No changes in this demo session yet.
+              No recent activity to display.
             </p>
           )}
         </Disclosure>
         <p className="text-xs text-muted-foreground">
-          Sample opening balance: 1 September 2026. Bank figures are recorded,
-          not live.
+          Bank figures reflect the mosque register, not a live bank connection.
         </p>
       </div>
     </>
@@ -175,6 +179,7 @@ export function Members({
   administrators?: boolean;
 }) {
   const action = useDemoAction();
+  const { role: actorRole } = useDemoRole();
   const [open, setOpen] = useState(false),
     [created, setCreated] = useState(''),
     [editing, setEditing] = useState<Member | null>(null),
@@ -186,9 +191,7 @@ export function Members({
     try {
       await action.mutateAsync({ type: 'member-status', id, status });
       setNotice(
-        status === 'inactive'
-          ? 'Access deactivated in demo.'
-          : 'A new demo invitation is ready.',
+        status === 'inactive' ? 'Access deactivated.' : 'Access reactivated.',
       );
     } catch (e) {
       setNotice((e as Error).message);
@@ -220,16 +223,21 @@ export function Members({
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex gap-2">
-          {administrators && row.original.role === 'admin' && (
-            <Button
-              variant="ghost"
-              className="h-11"
-              onClick={() => setEditing(row.original)}
-            >
-              Permissions
-            </Button>
+          {(row.original.role !== 'owner' || actorRole === 'super-admin') && (
+            <RecordActions record={row.original} kind="member" />
           )}
-          {row.original.role !== 'owner' && (
+          {administrators &&
+            row.original.role === 'admin' &&
+            row.original.status === 'active' && (
+              <Button
+                variant="ghost"
+                className="h-11"
+                onClick={() => setEditing(row.original)}
+              >
+                Permissions
+              </Button>
+            )}
+          {(row.original.role !== 'owner' || actorRole === 'super-admin') && (
             <Button
               variant="ghost"
               className="h-11"
@@ -241,7 +249,7 @@ export function Members({
               }
             >
               {row.original.status === 'inactive'
-                ? 'Reinvite'
+                ? 'Reactivate'
                 : row.original.status === 'invited'
                   ? 'Revoke'
                   : 'Deactivate'}
@@ -324,7 +332,7 @@ export function Members({
               ? 'Add administrator'
               : 'Add member'
         }
-        description="Frontend demo only. No real invitation or account is created."
+        description="Owners set a password and MFA. Admins set a 6-digit PIN; members set a 4-digit PIN."
       >
         {created ? (
           <InviteResult id={created} />
@@ -360,10 +368,11 @@ function InvitationForm({
   onCreated: (id: string) => void;
 }) {
   const action = useDemoAction();
+  const { role: actorRole } = useDemoRole();
   const [grants, setGrants] = useState<Permission[]>([...permissions]);
   return (
     <Form
-      submit="Create demo invitation"
+      submit="Create invitation"
       onSubmit={async (f) => {
         const r = await action.mutateAsync({
           type: 'invite',
@@ -407,26 +416,28 @@ function InvitationForm({
           <Field name="role" label="Role">
             <Choice name="role" defaultValue="admin">
               <option value="admin">Admin</option>
-              <option
-                value="owner"
-                disabled={data.members.some(
-                  (m) => m.role === 'owner' && m.status !== 'inactive',
-                )}
-              >
-                Owner{' '}
-                {data.members.some(
-                  (m) => m.role === 'owner' && m.status !== 'inactive',
-                )
-                  ? '— seat occupied'
-                  : ''}
-              </option>
+              {actorRole === 'super-admin' && (
+                <option
+                  value="owner"
+                  disabled={data.members.some(
+                    (m) => m.role === 'owner' && m.status !== 'inactive',
+                  )}
+                >
+                  Owner{' '}
+                  {data.members.some(
+                    (m) => m.role === 'owner' && m.status !== 'inactive',
+                  )
+                    ? '— seat occupied'
+                    : ''}
+                </option>
+              )}
             </Choice>
           </Field>
           <Disclosure title="Permissions">
             <PermissionSwitches grants={grants} onChange={setGrants} />
           </Disclosure>
           <p className="text-xs text-muted-foreground">
-            Admin accounts will require verified email and an authenticator.
+            Owners use a password and authenticator. Admins use a 6-digit PIN.
             Only the owner can reverse financial entries.
           </p>
         </>
@@ -492,11 +503,12 @@ function InviteResult({ id }: { id: string }) {
   const url =
     typeof window === 'undefined'
       ? ''
-      : `${window.location.origin}/invite?demo=${id}`;
+      : (invitationLinks.get(id) ??
+        `${window.location.origin}/invite?demo=${id}`);
   async function copy() {
     try {
       await navigator.clipboard.writeText(url);
-      setNotice('Demo link copied.');
+      setNotice('Invitation link copied.');
     } catch {
       setNotice('Select and copy the link below.');
     }
@@ -505,11 +517,11 @@ function InviteResult({ id }: { id: string }) {
     <div className="space-y-5">
       <div className="flex items-center gap-3 text-success">
         <Check />
-        Demo invitation prepared
+        Invitation prepared
       </div>
       <Input
         readOnly
-        aria-label="Demo invitation link"
+        aria-label="Invitation link"
         value={url}
         className="h-12"
       />
@@ -525,8 +537,8 @@ function InviteResult({ id }: { id: string }) {
             try {
               if (navigator.share)
                 await navigator.share({
-                  title: 'Demo mosque invitation',
-                  text: 'Frontend preview only — this does not activate a real membership.',
+                  title: 'Mosque invitation',
+                  text: 'Use this invitation to join your mosque.',
                   url,
                 });
               else await copy();
@@ -540,8 +552,8 @@ function InviteResult({ id }: { id: string }) {
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        Production invitations will expire after 48 hours. This link opens a
-        demonstration; it is not an authentication token.
+        Invitations expire after 48 hours. Share this private link only with the
+        invited person.
       </p>
       <Feedback message={notice} />
     </div>
@@ -556,33 +568,39 @@ export function Payments({ data }: { data: DemoState }) {
     [bulkReject, setBulkReject] = useState(false),
     [selectedIds, setSelectedIds] = useState<string[]>([]),
     [message, setMessage] = useState('');
-  const pendingPayments = data.payments.filter(
-    (payment) => payment.status === 'pending',
-  );
   const p = selected
     ? data.payments.find((p) => p.id === selected.id)
     : undefined;
   const columns: ColumnDef<Payment, unknown>[] = [
     {
       id: 'select',
-      header: () => (
-        <Checkbox
-          aria-label="Select all pending payments"
-          checked={
-            pendingPayments.length > 0 &&
-            pendingPayments.every((payment) => selectedIds.includes(payment.id))
-          }
-          onCheckedChange={(checked) =>
-            setSelectedIds(
-              checked ? pendingPayments.map((payment) => payment.id) : [],
-            )
-          }
-        />
-      ),
+      header: ({ table }) => {
+        const available = table
+          .getFilteredRowModel()
+          .rows.map((r) => r.original)
+          .filter((p) => p.status === 'pending')
+          .slice(0, 25);
+        return (
+          <Checkbox
+            aria-label="Select up to 25 matching pending payments"
+            checked={
+              available.length > 0 &&
+              available.every((p) => selectedIds.includes(p.id))
+            }
+            onCheckedChange={(checked) =>
+              setSelectedIds(checked ? available.map((p) => p.id) : [])
+            }
+          />
+        );
+      },
       cell: ({ row }) => (
         <Checkbox
-          aria-label={`Select payment from ${data.members.find((member) => member.id === row.original.memberId)?.name ?? 'member'}`}
+          aria-label={`Select payment from ${data.memberNames?.[row.original.memberId] ?? data.members.find((member) => member.id === row.original.memberId)?.name ?? 'member'}`}
           checked={selectedIds.includes(row.original.id)}
+          disabled={
+            row.original.status !== 'pending' ||
+            (!selectedIds.includes(row.original.id) && selectedIds.length >= 25)
+          }
           onCheckedChange={(checked) =>
             setSelectedIds((current) =>
               checked
@@ -596,7 +614,9 @@ export function Payments({ data }: { data: DemoState }) {
     {
       id: 'member',
       accessorFn: (p) =>
-        data.members.find((m) => m.id === p.memberId)?.name ?? 'Member',
+        data.memberNames?.[p.memberId] ??
+        data.members.find((m) => m.id === p.memberId)?.name ??
+        'Member',
       header: 'Member',
     },
     {
@@ -657,13 +677,17 @@ export function Payments({ data }: { data: DemoState }) {
             className="h-11"
             disabled={!selectedIds.length || action.isPending}
             onClick={async () => {
-              for (const id of selectedIds)
+              try {
                 await action.mutateAsync({
-                  type: 'review',
-                  id,
+                  type: 'bulk-review',
+                  ids: selectedIds,
                   status: 'verified',
                 });
-              setSelectedIds([]);
+                setSelectedIds([]);
+                setMessage('');
+              } catch (e) {
+                setMessage((e as Error).message);
+              }
             }}
           >
             <Check /> Approve selected
@@ -684,13 +708,14 @@ export function Payments({ data }: { data: DemoState }) {
         )}
         columns={columns}
       />
+      <Feedback message={message} error />
       <Modal
         open={!!p}
         onOpenChange={(open) => {
           if (!open) setSelected(null);
         }}
         title="Payment review"
-        description="Demo only. Check actual incoming transactions in the live app."
+        description="Check the actual incoming bank transaction before approving."
       >
         {p && (
           <>
@@ -698,13 +723,34 @@ export function Payments({ data }: { data: DemoState }) {
               <span className="text-3xl font-medium">{money(p.amount)}</span>
               <Status status={p.status} />
             </div>
-            <p>{data.members.find((m) => m.id === p.memberId)?.name}</p>
+            <p>
+              {data.memberNames?.[p.memberId] ??
+                data.members.find((m) => m.id === p.memberId)?.name}
+            </p>
             <p className="text-sm text-muted-foreground">
               {p.date} · {p.purpose} · {p.method}
             </p>
             <p className="break-all text-sm">
               Reference: {p.reference || 'Cash'}
             </p>
+            {p.evidencePath && (
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const file = await api<{ url: string }>('files/download', {
+                      bucket: 'payment-evidence',
+                      path: p.evidencePath,
+                    });
+                    window.open(file.url, '_blank', 'noopener,noreferrer');
+                  } catch (e) {
+                    setMessage((e as Error).message);
+                  }
+                }}
+              >
+                Open payment screenshot
+              </Button>
+            )}
             {p.evidence ? (
               <img
                 alt="Submitted screenshot"
@@ -812,13 +858,12 @@ export function Payments({ data }: { data: DemoState }) {
           submit="Reject selected"
           onSubmit={async (form) => {
             const reason = value(form, 'reason');
-            for (const id of selectedIds)
-              await action.mutateAsync({
-                type: 'review',
-                id,
-                status: 'rejected',
-                reason,
-              });
+            await action.mutateAsync({
+              type: 'bulk-review',
+              ids: selectedIds,
+              status: 'rejected',
+              reason,
+            });
             setSelectedIds([]);
             setBulkReject(false);
           }}
@@ -845,7 +890,7 @@ export function Cash({ data }: { data: DemoState }) {
       />
       {saved ? (
         <Panel>
-          <Feedback message="Cash contribution added to the sample register." />
+          <Feedback message="Cash contribution recorded." />
           <Button className="mt-5 h-12" onClick={() => setSaved(false)}>
             Record another
           </Button>
@@ -890,7 +935,9 @@ export function Cash({ data }: { data: DemoState }) {
               name="date"
               label="Received date"
               type="date"
-              defaultValue="2026-09-08"
+              defaultValue={new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Asia/Kolkata',
+              }).format(new Date())}
               required
             />
             <Field name="purpose" label="Purpose">
@@ -901,7 +948,7 @@ export function Cash({ data }: { data: DemoState }) {
             </Field>
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <Wallet className="size-4" />
-              Cash · Collector recorded as your demo role
+              Cash · Your account is recorded as the collector
             </p>
           </Form>
         </Panel>
@@ -934,22 +981,25 @@ export function Expenses({ data }: { data: DemoState }) {
       header: '',
       cell: ({ row }) =>
         row.original.status === 'draft' ? (
-          <Button
-            className="h-11"
-            variant="outline"
-            onClick={async () => {
-              try {
-                await action.mutateAsync({
-                  type: 'post-expense',
-                  id: row.original.id,
-                });
-              } catch (e) {
-                setNotice((e as Error).message);
-              }
-            }}
-          >
-            Mark paid
-          </Button>
+          <div className="flex gap-2">
+            <RecordActions record={row.original} kind="expense" />
+            <Button
+              className="h-11"
+              variant="outline"
+              onClick={async () => {
+                try {
+                  await action.mutateAsync({
+                    type: 'post-expense',
+                    id: row.original.id,
+                  });
+                } catch (e) {
+                  setNotice((e as Error).message);
+                }
+              }}
+            >
+              Mark paid
+            </Button>
+          </div>
         ) : role === 'owner' && row.original.status === 'paid' ? (
           <Button
             variant="ghost"
@@ -1009,7 +1059,9 @@ export function Expenses({ data }: { data: DemoState }) {
             name="date"
             label="Date"
             type="date"
-            defaultValue="2026-09-08"
+            defaultValue={new Intl.DateTimeFormat('en-CA', {
+              timeZone: 'Asia/Kolkata',
+            }).format(new Date())}
             required
           />
           <div className="grid grid-cols-2 gap-4">
@@ -1071,6 +1123,7 @@ export function Balance({ data }: { data: DemoState }) {
         title="Bank balance check"
         description="Compare an observation with your recorded balance."
       />
+      <OpeningBalance />
       <div className="grid items-start gap-6 xl:grid-cols-2">
         <Panel>
           <p className="text-sm text-muted-foreground">Recorded bank balance</p>
@@ -1100,15 +1153,22 @@ export function Balance({ data }: { data: DemoState }) {
             />
             <Field
               name="date"
-              label="Checked at (IST)"
-              type="datetime-local"
-              defaultValue="2026-09-08T12:00"
+              label="As of date (IST)"
+              type="date"
+              defaultValue={new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Asia/Kolkata',
+              }).format(new Date())}
               required
             />
-            <Field name="note" label="Note (optional)" maxLength={300} />
+            <Field
+              name="note"
+              label="Reconciliation note"
+              required
+              maxLength={300}
+            />
             <p className="text-xs text-muted-foreground">
-              In this demo, comparison uses the current sample register.
-              Historical reconciliation comes with the backend.
+              The comparison uses the recorded bank balance as of the selected
+              date. Observations do not change the ledger.
             </p>
           </Form>
           <div className="mt-4">
@@ -1164,7 +1224,9 @@ export function Balance({ data }: { data: DemoState }) {
                 name="date"
                 label="Transfer date"
                 type="date"
-                defaultValue="2026-09-08"
+                defaultValue={new Intl.DateTimeFormat('en-CA', {
+                  timeZone: 'Asia/Kolkata',
+                }).format(new Date())}
                 required
               />
             </Form>
@@ -1176,6 +1238,7 @@ export function Balance({ data }: { data: DemoState }) {
 }
 export function PrayerEditor({ data }: { data: DemoState }) {
   const action = useDemoAction();
+  const schedule = data.prayers.length ? data.prayers : initialPrayers;
   const [notice, setNotice] = useState('');
   return (
     <div className="max-w-2xl">
@@ -1185,9 +1248,9 @@ export function PrayerEditor({ data }: { data: DemoState }) {
       />
       <Panel>
         <Form
-          submit="Update demo timetable"
+          submit="Update timetable"
           onSubmit={async (f) => {
-            const prayers = data.prayers.map((p) => ({
+            const prayers = schedule.map((p) => ({
               ...p,
               adhan: value(f, `${p.id}-adhan`),
               jamaat: value(f, `${p.id}-jamaat`),
@@ -1196,7 +1259,7 @@ export function PrayerEditor({ data }: { data: DemoState }) {
               if (p.jamaat < p.adhan)
                 throw Error(`${p.name}: jamaat cannot be earlier than adhan.`);
             await action.mutateAsync({ type: 'prayers', prayers });
-            setNotice('Sample timetable updated across the frontend.');
+            setNotice('Mosque timetable saved.');
           }}
         >
           <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 text-sm text-muted-foreground">
@@ -1204,7 +1267,7 @@ export function PrayerEditor({ data }: { data: DemoState }) {
             <span>Adhan</span>
             <span>Jamaat</span>
           </div>
-          {data.prayers.map((p) => (
+          {schedule.map((p) => (
             <div
               className="grid grid-cols-[1fr_1fr_1fr] items-center gap-3"
               key={p.id}
@@ -1229,9 +1292,8 @@ export function PrayerEditor({ data }: { data: DemoState }) {
             </div>
           ))}
           <p className="text-xs text-muted-foreground">
-            This edits the demo timetable immediately. Future-effective
-            schedules, Jumu’ah, and Hijri authority will be connected in the
-            backend phase.
+            Changes take effect immediately. Confirm the timetable with your
+            mosque before saving.
           </p>
         </Form>
         <div className="mt-4">
@@ -1285,6 +1347,9 @@ export function NewsEditor({ data }: { data: DemoState }) {
               </Button>
             </div>
             <p className="mt-3 text-sm">{n.body}</p>
+            <div className="mt-3 flex gap-2">
+              <RecordActions record={n} kind="notice" />
+            </div>
           </Panel>
         ))}
       </div>
@@ -1321,7 +1386,9 @@ export function NewsEditor({ data }: { data: DemoState }) {
             label="Date"
             type="date"
             required
-            defaultValue="2026-09-08"
+            defaultValue={new Intl.DateTimeFormat('en-CA', {
+              timeZone: 'Asia/Kolkata',
+            }).format(new Date())}
           />
           <Field
             name="image"
@@ -1354,7 +1421,7 @@ export function Receiving({ data }: { data: DemoState }) {
       />
       <Panel>
         <Form
-          submit="Save demo receiving details"
+          submit="Save receiving details"
           onSubmit={async (f) => {
             await action.mutateAsync({
               type: 'receiving',
@@ -1407,8 +1474,8 @@ export function Receiving({ data }: { data: DemoState }) {
             />
           )}
           <p className="text-xs text-muted-foreground">
-            Use a sample image only. Production updates will require
-            reauthentication and record the editor.
+            Verify the UPI recipient before saving. Updates require receiving
+            permission and record the editor.
           </p>
         </Form>
         <div className="mt-4">
@@ -1436,7 +1503,7 @@ export function exportPayments(data: DemoState) {
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'sample-contributions.csv';
+  a.download = 'contributions.csv';
   a.click();
   URL.revokeObjectURL(url);
 }

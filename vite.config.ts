@@ -1,8 +1,9 @@
 import { sites } from '@openai/sites-vite-plugin';
 import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
-import { defineConfig } from 'vite';
+import { defineConfig, type ViteDevServer } from 'vite';
 import hostingConfig from './.openai/hosting.json';
+import { request as httpRequest } from 'node:http';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   '00000000-0000-4000-8000-000000000000';
@@ -35,6 +36,45 @@ const localBindingConfig = {
 };
 
 export default defineConfig(async () => {
+  if (process.env.MOSQUE_LOCAL_BACKEND === 'true') {
+    return {
+      css: { postcss: { plugins: [tailwindcss()] } },
+      server: {
+        port: 3000,
+        strictPort: true,
+      },
+      plugins: [
+        {
+          name: 'mosque-local-api',
+          enforce: 'pre',
+          configureServer(server: ViteDevServer) {
+            server.middlewares.use((req, res, next) => {
+              if (!req.url?.startsWith('/api/backend/')) return next();
+              const upstream = httpRequest(
+                {
+                  hostname: '127.0.0.1',
+                  port: 3001,
+                  path: req.url,
+                  method: req.method,
+                  headers: req.headers,
+                },
+                (response) => {
+                  res.writeHead(response.statusCode ?? 502, response.headers);
+                  response.pipe(res);
+                },
+              );
+              upstream.on('error', () => {
+                if (!res.headersSent) res.writeHead(503);
+                res.end();
+              });
+              req.pipe(upstream);
+            });
+          },
+        },
+        vinext(),
+      ],
+    };
+  }
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= 'false';

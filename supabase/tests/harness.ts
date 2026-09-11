@@ -19,6 +19,10 @@ export async function database() {
     '202609090003_storage',
     '202609090004_invitation_preflight',
     '202609090005_invitation_listing',
+    '202609100006_crud',
+    '202609100007_login_guard',
+    '202609100008_activity',
+    '202609100009_payment_names',
   ]) {
     const sql = readFileSync(`supabase/migrations/${name}.sql`, 'utf8');
     try {

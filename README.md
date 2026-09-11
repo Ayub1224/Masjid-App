@@ -4,7 +4,7 @@ Minimal, responsive frontend for Gausul wara masjid in Durg. Built with React, T
 
 ## Run
 
-Use Node 22 or later. Run `npm install`, then `npm run dev`. Validation: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
+For the complete local app, run `node scripts/local-setup.mjs`, then `docker compose up --build -d`. Open http://localhost:3000 and activate your administrator account through the local inbox at http://localhost:8025. No cloud credentials are needed. See [local development](docs/local-development.md) for persistence and restart instructions. Docker supplies Node 24.
 
 ## Themes
 
@@ -14,13 +14,13 @@ Use Node 22 or later. Run `npm install`, then `npm run dev`. Validation: `npm ru
 
 Use the clearly labelled demo role selector for Guest, Member, Admin, Owner and Super admin journeys. Tables support search, sorting and pagination. Most secondary information stays collapsed. Member-facing language controls support English/Hindi; administrative copy still needs complete Hindi translation.
 
-All data is sample data in an in-memory adapter (`lib/data/repository.ts`) consumed by TanStack Query. Refresh resets records. Screenshots stay in browser memory and are never uploaded. No real payments, email delivery, authentication, signed invitations or database connection are implemented. Never enter actual payment details into this demo. Demo permissions demonstrate UI behavior and are not a security boundary.
+The Docker setup uses persistent PostgreSQL records, local authentication, private uploads and a local mail inbox. The explicit demo adapter (`lib/data/repository.ts`) remains available only in the older preview path; it is not used by Docker.
 
 The model distinguishes pending donations from verified receipts, bank from cash, drafts from paid expenses, and bank observations from ledger totals. Corrections preserve originals in the demo audit history. Production needs transactional append-only reversals, immutable audit records and reconciliation against historical balances. The current balance-check form explicitly compares against the current demo register. Prayer times are samples; Hijri date remains unconfirmed until configured. Prayer changes apply immediately in the demo.
 
-## Backend next
+## Historical hosted backend
 
-Integrate Supabase Auth email verification, expiring single-use invitations, server-enforced role permissions and row-level security; private evidence storage; transactional donation verification and ledger entries; timezone-aware prayer publishing and locally confirmed Hijri dates. Complete Hindi copy and accessibility/device acceptance testing before release. Rotate any credential previously shared in chat and supply new secrets only through protected environment configuration.
+The optional Supabase implementation is retained for reference. Docker uses `local/server.ts` with standard PostgreSQL and does not call that service. Deployment planning is deferred; this stack binds only to the local machine.
 
 ## Validation
 
@@ -28,4 +28,11 @@ Domain tests cover 11 cases including exact paise parsing, duplicate approvals, 
 
 ## Backend implementation
 
-The Supabase backend lives in `app/api/backend`, `lib/server` and `supabase/migrations`. See [backend security and launch status](docs/backend-security.md) for API usage, threat boundaries, secure configuration, migration/bootstrap steps, verification limits and outstanding release blockers. The frontend still uses its isolated demo adapter; the new backend is not yet deployed or connected to it. Do not use the demo as a live donation register.
+The active local backend lives in `local/`. It reuses the SQL business rules in `supabase/migrations` on standard PostgreSQL. The optional historical hosted implementation remains in `app/api/backend` and `lib/server`. Older notes in `docs/backend-security.md` describe that hosted path; see `docs/local-development.md` for the current Docker runtime.
+# Local Docker setup
+
+Run `node scripts/local-setup.mjs`, then `docker compose up --build -d`.
+Open http://localhost:3000 and the activation email in http://localhost:8025.
+All services and data run locally; cloud keys are unnecessary.
+See [local setup and persistence](docs/local-development.md).
+The historical hosted-backend notes above describe the optional Supabase path.

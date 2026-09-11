@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { keyedToken, pinPassword, loginIdentity } from '@/lib/server/pin';
 import {
   ApiError,
   json,
@@ -54,8 +55,15 @@ function dbError(error: { code?: string } | null) {
 }
 async function handle(request: Request) {
   try {
-    const { origin } = config();
     const path = new URL(request.url).pathname.replace(/^\/api\/backend\//, '');
+    if (path === 'settings' && request.method === 'GET')
+      return json({
+        demo:
+          process.env.MOSQUE_DEMO_MODE === 'true' &&
+          process.env.NODE_ENV !== 'production',
+        turnstileSiteKey: process.env.TURNSTILE_SITE_KEY ?? '',
+      });
+    const { origin } = config();
     if (request.method !== 'GET') {
       // Bearer clients (future mobile app) do not rely on ambient cookies. Browser cookies always require an exact trusted Origin.
       if (
@@ -71,7 +79,7 @@ async function handle(request: Request) {
         client.from('mosque_prayers').select('name,adhan,jamaat,updated_at'),
         client
           .from('mosque_news')
-          .select('id,title,body,hindi_title,hindi_body,event_on')
+          .select('id,title,body,hindi_title,hindi_body,event_on,image_url')
           .eq('published', true)
           .order('event_on', { ascending: false })
           .limit(20),
@@ -83,9 +91,10 @@ async function handle(request: Request) {
     if (path === 'auth/login' && request.method === 'POST') {
       const input = credentials.parse(await bodyJson(request));
       await captcha(input.captchaToken);
+      const email = await loginIdentity(input.identifier);
       const { data, error } = await supabase().auth.signInWithPassword({
-        email: input.email,
-        password: input.password,
+        email,
+        password: await pinPassword(email, input.pin),
       });
       if (error || !data.session)
         throw new ApiError(401, 'INVALID_CREDENTIALS');
@@ -97,14 +106,14 @@ async function handle(request: Request) {
       const client = supabase();
       const check = await client.rpc('mosque_invitation_valid', {
         token: input.invitationToken,
-        email: input.email,
+        email: input.identifier,
       });
       dbError(check.error);
       if (check.data !== true)
         throw new ApiError(400, 'INVITATION_UNAVAILABLE');
       const { error } = await client.auth.signUp({
-        email: input.email,
-        password: input.password,
+        email: input.identifier,
+        password: await pinPassword(input.identifier, input.pin),
         options: { emailRedirectTo: `${origin}/invite` },
       });
       if (error) throw new ApiError(400, 'REGISTRATION_UNAVAILABLE');
@@ -181,7 +190,7 @@ async function handle(request: Request) {
     if (path === 'auth/password' && request.method === 'POST') {
       const input = z
         .strictObject({
-          password: z.string().min(12).max(128),
+          pin: z.string().regex(/^\d{6}$/),
           nonce: z.string().max(32).optional(),
         })
         .parse(await bodyJson(request));
@@ -192,7 +201,10 @@ async function handle(request: Request) {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(input),
+        body: JSON.stringify({
+          password: await pinPassword(user.email!, input.pin),
+          nonce: input.nonce,
+        }),
         signal: AbortSignal.timeout(15000),
       });
       if (!response.ok)
@@ -232,7 +244,17 @@ async function handle(request: Request) {
         .eq('id', user.id)
         .maybeSingle();
       dbError(profile.error);
-      return json({ profile: profile.data, userId: user.id });
+      const claims = await client.auth.getClaims(token);
+      return json({
+        profile: profile.data,
+        userId: user.id,
+        aal: claims.data?.claims.aal ?? 'aal1',
+      });
+    }
+    if (path === 'payment-names' && request.method === 'GET') {
+      const result = await client.rpc('mosque_payment_names');
+      dbError(result.error);
+      return json({ names: result.data });
     }
     if (path === 'records' && request.method === 'GET') {
       const params = new URL(request.url).searchParams;
@@ -262,7 +284,8 @@ async function handle(request: Request) {
         mosque_balance_checks:
           'id,observed_paise,recorded_paise,as_of,note,created_at',
         mosque_prayers: 'name,adhan,jamaat,updated_at',
-        mosque_news: 'id,title,body,hindi_title,hindi_body,event_on,published',
+        mosque_news:
+          'id,title,body,hindi_title,hindi_body,event_on,published,image_url',
         mosque_receiving: 'upi,recipient,qr_path,updated_at',
       };
       const result = await client
@@ -291,18 +314,24 @@ async function handle(request: Request) {
       return json({ invitations: result.data, page });
     }
     if (path === 'finances' && request.method === 'GET') {
-      const result = await client.rpc('mosque_finances');
+      const result = await client.rpc('mosque_financial_summary');
       dbError(result.error);
       return json(result.data);
+    }
+    if (path === 'activity' && request.method === 'GET') {
+      const result = await client.rpc('mosque_activity');
+      dbError(result.error);
+      return json({ activity: result.data });
     }
     if (path === 'command' && request.method === 'POST') {
       const requestId = uuid.parse(request.headers.get('idempotency-key'));
       const input = commandSchema.parse(await bodyJson(request));
       const invitationToken =
         input.type === 'invite'
-          ? Array.from(crypto.getRandomValues(new Uint8Array(32)), (v) =>
-              v.toString(16).padStart(2, '0'),
-            ).join('')
+          ? await keyedToken(
+              `invite:${user.id}:${requestId}`,
+              'INVITATION_SECRET',
+            )
           : undefined;
       const result = await client.rpc('mosque_command', {
         request_id: requestId,

@@ -6,13 +6,18 @@
     "node": "^22.13.0 || ^24.0.0 || >=26.0.0"
   },
   "scripts": {
+    "local:setup": "node scripts/local-setup.mjs",
+    "local:start": "docker compose up --build -d",
+    "local:stop": "docker compose stop",
+    "local:test": "docker compose exec -T app node --import tsx local/verify.ts",
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "format": "oxfmt",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "api:spec": "node --experimental-strip-types scripts/generate-openapi.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
@@ -28,6 +33,9 @@
     "embla-carousel-react": "8.5.2",
     "input-otp": "1.4.2",
     "lucide-react": "1.31.0",
+    "nodemailer": "^10.0.3",
+    "otpauth": "^9.5.2",
+    "pg": "^8.23.0",
     "react": "^19.2.8",
     "react-day-picker": "9.8.1",
     "react-dom": "^19.2.8",
@@ -48,6 +56,8 @@
     "@openai/sites-vite-plugin": "0.2.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
+    "@types/nodemailer": "^8.0.1",
+    "@types/pg": "^8.23.1",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@types/suncalc": "^1.9.2",
@@ -57,6 +67,7 @@
     "oxlint": "1.76.0",
     "oxlint-tsgolint": "7.0.2001",
     "tailwindcss": "4.2.1",
+    "tsx": "^4.23.13",
     "typescript": "5.9.3",
     "vite": "^8.2.2",
     "vitest": "^5.0.0",

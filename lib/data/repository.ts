@@ -16,6 +16,12 @@ let state: DemoState | undefined;
 const current = () => state ?? (state = createSeed());
 const id = () => crypto.randomUUID();
 export type Action =
+  | {
+      type: 'bulk-review';
+      ids: string[];
+      status: 'verified' | 'rejected';
+      reason?: string;
+    }
   | { type: 'submit'; payment: Omit<Payment, 'id' | 'status'> }
   | {
       type: 'review';
@@ -54,6 +60,11 @@ export const demoRepository = {
     let s = structuredClone(current());
     let resultId = '';
     switch (a.type) {
+      case 'bulk-review':
+        requirePower(role, 'verify');
+        for (const paymentId of a.ids)
+          s = verifyPayment(s, paymentId, a.status, a.reason);
+        break;
       case 'submit':
         if (role === 'guest' || role === 'super-admin')
           throw Error('Open a member demo to contribute.');
