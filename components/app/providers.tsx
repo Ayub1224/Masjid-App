@@ -1,5 +1,6 @@
 'use client';
 import { createContext, useContext, useState, type ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
 import {
   QueryClient,
   QueryClientProvider,
@@ -95,17 +96,28 @@ export function AppProviders({ children }: { children: ReactNode }) {
 }
 export const useIdentity = () => useContext(RoleContext);
 export function useMosqueData() {
+  const path = usePathname();
   const { session, loading, role } = useIdentity();
   return useQuery({
     queryKey: [
       'mosque-data',
+      path,
       session?.userId ?? 'public',
       role,
       session?.aal,
       session?.profile?.permissions.join(','),
     ],
-    queryFn: () => readData(session),
-    enabled: !loading,
+    queryFn: ({ signal }) => readData(session, path ?? 'all', signal),
+    enabled:
+      !loading &&
+      ![
+        '/admin/mosque',
+        '/settings',
+        '/login',
+        '/forgot-password',
+        '/invite',
+      ].includes(path ?? ''),
+    retry: false,
     refetchInterval: 60000,
   });
 }

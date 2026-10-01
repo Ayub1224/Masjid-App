@@ -11,6 +11,7 @@ import {
   Feedback,
 } from '@/components/app/primitives';
 import { Button } from '@/components/ui/button';
+import { InvitationAccountGuard } from './invitation-account-guard';
 type Method = { kind: 'password' | 'pin'; digits: number };
 export function LocalLogin({
   recover = false,
@@ -20,7 +21,7 @@ export function LocalLogin({
   invite?: boolean;
 }) {
   const router = useRouter();
-  const { session, reload } = useIdentity();
+  const { session, reload, logout } = useIdentity();
   const [identifier, setIdentifier] = useState(''),
     [method, setMethod] = useState<Method | null>(null),
     [invitation, setInvitation] = useState(''),
@@ -75,6 +76,13 @@ export function LocalLogin({
           <p>Confirm this account or recovery link.</p>
         </Form>
       </Panel>
+    );
+  if (invite && session?.profile)
+    return (
+      <InvitationAccountGuard
+        email={session.profile.email}
+        onSignOut={logout}
+      />
     );
   if (invite && session?.userId)
     return (

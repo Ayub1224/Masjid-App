@@ -1,7 +1,7 @@
 'use client';
 /* oxlint-disable next/no-img-element -- optional uploaded mosque image */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Landmark } from 'lucide-react';
+import { Landmark, Pencil, MapPin } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '@/lib/data/api';
 import { mosque } from '@/config/mosque';
@@ -23,6 +23,8 @@ export function MosqueDetailsEditor() {
   const [picture, setPicture] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const current = picture ?? query.data?.picture ?? '';
   return (
     <>
@@ -33,7 +35,7 @@ export function MosqueDetailsEditor() {
       <Panel>
         {query.isPending ? (
           <p>Loading mosque details…</p>
-        ) : query.isError ? (
+        ) : query.isError && !query.data ? (
           <>
             <Feedback
               message="Unable to load mosque details. Check the backend and database migration."
@@ -41,9 +43,63 @@ export function MosqueDetailsEditor() {
             />
             <Button onClick={() => query.refetch()}>Retry</Button>
           </>
+        ) : query.data && !editing ? (
+          <div className="relative space-y-6">
+            <Button
+              variant="outline"
+              className="absolute right-0 top-0 size-11"
+              aria-label="Edit mosque details"
+              onClick={() => {
+                setPicture(null);
+                setError('');
+                setNotice('');
+                setEditing(true);
+              }}
+            >
+              <Pencil className="size-4" />
+            </Button>
+            <div className="flex flex-col gap-4 pr-14 sm:flex-row sm:items-center">
+              {query.data.picture ? (
+                <img
+                  src={query.data.picture}
+                  alt={query.data.name}
+                  className="size-24 shrink-0 rounded-xl object-cover"
+                />
+              ) : (
+                <Landmark
+                  className="size-24 shrink-0 rounded-xl bg-accent p-5 text-primary"
+                  aria-label="Mosque"
+                />
+              )}
+              <div className="min-w-0">
+                <h2 className="break-words font-heading text-2xl">
+                  {query.data.name}
+                </h2>
+                <p className="mt-2 flex items-start gap-2 text-sm text-muted-foreground">
+                  <MapPin className="mt-0.5 size-4 shrink-0" />
+                  <span className="whitespace-pre-wrap break-words">
+                    {query.data.address}
+                  </span>
+                </p>
+              </div>
+            </div>
+            <dl className="grid grid-cols-2 gap-4 border-t pt-5 text-sm">
+              <div>
+                <dt className="text-muted-foreground">Latitude</dt>
+                <dd className="mt-1 font-medium tabular-nums">
+                  {query.data.latitude}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Longitude</dt>
+                <dd className="mt-1 font-medium tabular-nums">
+                  {query.data.longitude}
+                </dd>
+              </div>
+            </dl>
+          </div>
         ) : (
           <Form
-            key={query.dataUpdatedAt}
             submit="Save mosque details"
             onSubmit={async (f) => {
               const input = mosqueDetailsSchema.parse({
@@ -53,9 +109,19 @@ export function MosqueDetailsEditor() {
                 longitude: Number(f.get('longitude')),
                 picture: current,
               });
-              await api('mosque', input);
-              await cache.invalidateQueries({ queryKey: ['mosque-details'] });
-              setNotice('Mosque details saved.');
+              setSaving(true);
+              try {
+                await api('mosque', input);
+                await cache.cancelQueries({ queryKey: ['mosque-details'] });
+                cache.setQueryData(['mosque-details'], input);
+                setEditing(false);
+                setPicture(null);
+                setError('');
+                setNotice('Mosque details saved.');
+                void cache.invalidateQueries({ queryKey: ['mosque-details'] });
+              } finally {
+                setSaving(false);
+              }
             }}
           >
             <div className="flex items-center gap-4">
@@ -156,6 +222,21 @@ export function MosqueDetailsEditor() {
               coordinates, so replace placeholders with the mosque’s actual
               location before relying on the times.
             </p>
+            {query.data && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={saving}
+                onClick={() => {
+                  setEditing(false);
+                  setPicture(null);
+                  setError('');
+                  setNotice('');
+                }}
+              >
+                Cancel
+              </Button>
+            )}
           </Form>
         )}
         <Feedback message={error || notice} error={!!error} />

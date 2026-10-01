@@ -129,7 +129,10 @@ export function AppShell({
               {role === 'owner' && (
                 <Link
                   href="/admin/administrators"
-                  className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm"
+                  aria-current={
+                    path === '/admin/administrators' ? 'page' : undefined
+                  }
+                  className={`flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm ${path === '/admin/administrators' ? 'bg-accent text-primary' : 'hover:bg-muted'}`}
                 >
                   <ShieldCheck className="size-4" />
                   Administrators
@@ -139,14 +142,16 @@ export function AppShell({
                 <>
                   <Link
                     href="/admin/mosque"
-                    className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm"
+                    aria-current={path === '/admin/mosque' ? 'page' : undefined}
+                    className={`flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm ${path === '/admin/mosque' ? 'bg-accent text-primary' : 'hover:bg-muted'}`}
                   >
                     <Home className="size-4" />
                     Mosque details
                   </Link>
                   <Link
                     href="/super-admin"
-                    className="flex min-h-12 items-center gap-3 rounded-lg bg-accent px-3 text-primary"
+                    aria-current={path === '/super-admin' ? 'page' : undefined}
+                    className={`flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm ${path === '/super-admin' ? 'bg-accent text-primary' : 'hover:bg-muted'}`}
                   >
                     <ShieldCheck className="size-4" />
                     Administrators
@@ -161,6 +166,7 @@ export function AppShell({
                     <Link
                       key={href}
                       href={href}
+                      aria-current={path === href ? 'page' : undefined}
                       className={`flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm ${path === href ? 'bg-accent font-medium text-primary' : 'text-muted-foreground hover:bg-muted'}`}
                     >
                       <Icon className="size-4" />
@@ -209,7 +215,7 @@ export function AppShell({
               : 'mx-auto w-full max-w-xl px-5 pb-28 pt-7 sm:px-8 sm:pt-10'
           }
         >
-          {!admin && canManage && (
+          {!admin && canManage && path !== '/invite' && (
             <Link
               href={dashboardPath}
               className="mb-6 flex min-h-16 items-center gap-3 rounded-xl border bg-accent px-4 py-3 text-primary transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

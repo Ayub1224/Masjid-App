@@ -14,6 +14,7 @@ import {
 } from '@/components/app/primitives';
 import { Button } from '@/components/ui/button';
 import { LocalLogin } from './local-auth';
+import { InvitationAccountGuard } from './invitation-account-guard';
 const field = (f: FormData, key: string) =>
   typeof f.get(key) === 'string' ? (f.get(key) as string) : '';
 type Turnstile = {
@@ -109,7 +110,7 @@ function HostedLogin({
   invite?: boolean;
 }) {
   const router = useRouter();
-  const { session, reload } = useIdentity();
+  const { session, reload, logout } = useIdentity();
   const [token, setToken] = useState(''),
     [identifier, setIdentifier] = useState(''),
     [epoch, setEpoch] = useState(0),
@@ -161,6 +162,13 @@ function HostedLogin({
           <p>Confirm this sign-in or recovery link for your mosque account.</p>
         </Form>
       </Panel>
+    );
+  if (invite && session?.profile)
+    return (
+      <InvitationAccountGuard
+        email={session.profile.email}
+        onSignOut={logout}
+      />
     );
   if (invite && session?.userId)
     return (

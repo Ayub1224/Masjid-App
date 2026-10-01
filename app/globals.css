@@ -81,6 +81,26 @@ body {
   min-width: 320px;
   font-size: 16px;
   line-height: 1.55;
+  isolation: isolate;
+}
+/* A theme-aware five-fold watermark. The art is a mask so every configured
+   theme can tint the same lightweight geometry with its own primary color. */
+body::before {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background: var(--primary);
+  opacity: 0.038;
+  -webkit-mask-image: url('/fivefold-watermark.svg');
+  mask-image: url('/fivefold-watermark.svg');
+  -webkit-mask-size: 180px 180px;
+  mask-size: 180px 180px;
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+  -webkit-mask-position: center top;
+  mask-position: center top;
 }
 button,
 a,
@@ -109,6 +129,18 @@ button {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+@media (max-width: 639px) {
+  body::before {
+    opacity: 0.03;
+    -webkit-mask-size: 150px 150px;
+    mask-size: 150px 150px;
+  }
+}
+@media (forced-colors: active) {
+  body::before {
+    display: none;
   }
 }
 

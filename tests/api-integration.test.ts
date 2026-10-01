@@ -14,6 +14,56 @@ afterEach(() => {
   vi.unstubAllEnvs();
   clearPrivateClientState();
 });
+it('loads administrators without unrelated finance or public requests', async () => {
+  const fetcher = vi.fn(async (url: string) => {
+    if (url.includes('records?table=mosque_profiles'))
+      return Response.json({ records: [] });
+    if (url.includes('invitations?page='))
+      return Response.json({ invitations: [] });
+    throw Error(`Unexpected request: ${url}`);
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const result = await readData(
+    {
+      userId: 'admin',
+      aal: 'aal2',
+      profile: {
+        id: 'admin',
+        name: 'Admin',
+        email: 'admin@example.com',
+        phone: '',
+        address: '',
+        role: 'super-admin',
+        active: true,
+        permissions: [],
+      },
+    },
+    '/super-admin',
+  );
+  expect(result.members).toEqual([]);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+it('propagates navigation cancellation to requests and stops pagination', async () => {
+  const controller = new AbortController();
+  const fetcher = vi.fn(
+    (_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener(
+          'abort',
+          () => reject(init.signal?.reason),
+          { once: true },
+        );
+      }),
+  );
+  vi.stubGlobal('fetch', fetcher);
+  const pending = readData(null, 'all', controller.signal);
+  const rejected = expect(pending).rejects.toMatchObject({
+    name: 'AbortError',
+  });
+  controller.abort();
+  await rejected;
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
 it('retries an uncertain financial result with the same idempotency key', async () => {
   const fetcher = vi
     .fn()

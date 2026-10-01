@@ -51,6 +51,9 @@ export async function api<T = Record<string, unknown>>(
   }
   const response = await fetch(`/api/backend/${path}`, {
     ...init,
+    signal: init.signal
+      ? AbortSignal.any([init.signal, AbortSignal.timeout(20000)])
+      : AbortSignal.timeout(20000),
     method: body === undefined ? (init.method ?? 'GET') : 'POST',
     credentials: 'same-origin',
     headers,
@@ -61,6 +64,7 @@ export async function api<T = Record<string, unknown>>(
     retry &&
     ![
       'auth/login',
+      'auth/identify',
       'auth/register',
       'auth/refresh',
       'auth/recover',
@@ -110,11 +114,13 @@ export async function readSession(): Promise<Session | null> {
     throw e;
   }
 }
-async function all(table: string): Promise<Row[]> {
+async function all(table: string, signal?: AbortSignal): Promise<Row[]> {
   const rows: Row[] = [];
   for (let page = 0; page <= 10000; page++) {
     const batch = await api<{ records: Row[] }>(
       `records?table=${table}&page=${page}`,
+      undefined,
+      { signal },
     );
     rows.push(...batch.records);
     if (batch.records.length < 50) return rows;
@@ -141,8 +147,30 @@ const prayers = (rows: Row[]): Prayer[] =>
     adhan: p.adhan.slice(0, 5),
     jamaat: p.jamaat.slice(0, 5),
   }));
-export async function readData(session: Session | null): Promise<DemoState> {
-  const pub = await api<{ prayers: Row[]; news: Row[] }>('public');
+export async function readData(
+  session: Session | null,
+  scope = 'all',
+  signal?: AbortSignal,
+): Promise<DemoState> {
+  const groups: Record<string, string[]> = {
+    '/super-admin': ['profiles', 'invitations'],
+    '/admin/administrators': ['profiles', 'invitations'],
+    '/admin/members': ['profiles', 'invitations'],
+    '/admin/payments': ['payments', 'names'],
+    '/admin/cash': ['profiles', 'payments'],
+    '/admin/expenses': ['expenses'],
+    '/admin/prayers': ['public'],
+    '/admin/news': ['news'],
+    '/admin/receiving': ['receiving'],
+    '/admin/balance': ['checks', 'finance'],
+  };
+  const needs = (group: string) =>
+    !groups[scope] || groups[scope].includes(group);
+  const pub = needs('public')
+    ? await api<{ prayers: Row[]; news: Row[] }>('public', undefined, {
+        signal,
+      })
+    : { prayers: [], news: [] };
   const state: DemoState = {
     members: [],
     payments: [],
@@ -159,16 +187,18 @@ export async function readData(session: Session | null): Promise<DemoState> {
   if (!session?.profile?.active) return state;
   const [members, payments, expenses, checks, news, receiving, finance] =
     await Promise.all([
-      all('mosque_profiles'),
-      all('mosque_payments'),
-      all('mosque_expenses'),
-      all('mosque_balance_checks'),
-      all('mosque_news'),
-      all('mosque_receiving'),
-      api<{
-        balance: { bankPaise: number; cashPaise: number };
-        months: NonNullable<DemoState['monthly']>;
-      }>('finances'),
+      needs('profiles') ? all('mosque_profiles', signal) : [],
+      needs('payments') ? all('mosque_payments', signal) : [],
+      needs('expenses') ? all('mosque_expenses', signal) : [],
+      needs('checks') ? all('mosque_balance_checks', signal) : [],
+      needs('news') ? all('mosque_news', signal) : [],
+      needs('receiving') ? all('mosque_receiving', signal) : [],
+      needs('finance')
+        ? api<{
+            balance: { bankPaise: number; cashPaise: number };
+            months: NonNullable<DemoState['monthly']>;
+          }>('finances', undefined, { signal })
+        : { balance: { bankPaise: 0, cashPaise: 0 }, months: [] },
     ]);
   state.members = members
     .filter((m) => m.role !== 'super-admin')
@@ -225,10 +255,16 @@ export async function readData(session: Session | null): Promise<DemoState> {
   state.monthly = finance.months;
   if (receiving[0]) {
     const r = receiving[0];
-    const file = await api<{ url: string }>('files/download', {
-      bucket: 'mosque-qr',
-      path: r.qr_path,
-    });
+    const file = r.qr_path
+      ? await api<{ url: string }>(
+          'files/download',
+          {
+            bucket: 'mosque-qr',
+            path: r.qr_path,
+          },
+          { signal },
+        )
+      : { url: undefined };
     state.receiving = {
       upi: r.upi,
       recipient: r.recipient,
@@ -238,29 +274,34 @@ export async function readData(session: Session | null): Promise<DemoState> {
   }
   const p = session.profile;
   if (
+    needs('names') &&
     (session.aal === 'aal2' || p.role === 'admin') &&
     (p.role === 'owner' ||
       (p.role === 'admin' &&
         p.permissions.some((v) => ['verify', 'record', 'reports'].includes(v))))
   ) {
     state.memberNames = (
-      await api<{ names: Record<string, string> }>('payment-names')
+      await api<{ names: Record<string, string> }>('payment-names', undefined, {
+        signal,
+      })
     ).names;
   }
   if (
+    needs('activity') &&
     (session.aal === 'aal2' || p.role === 'admin') &&
     p.role !== 'member' &&
     (p.role !== 'admin' || p.permissions.length > 0)
   ) {
     const result = await api<{
       activity: { action: string; created_at: string }[];
-    }>('activity');
+    }>('activity', undefined, { signal });
     state.audit = result.activity.map(
       (e) =>
         `${new Date(e.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} · ${e.action}`,
     );
   }
   if (
+    needs('invitations') &&
     (session.aal === 'aal2' || p.role === 'admin') &&
     (p.role === 'owner' ||
       p.role === 'super-admin' ||
@@ -269,6 +310,8 @@ export async function readData(session: Session | null): Promise<DemoState> {
     for (let page = 0; page <= 10000; page++) {
       const batch = await api<{ invitations: Row[] }>(
         `invitations?page=${page}`,
+        undefined,
+        { signal },
       );
       state.members.push(
         ...batch.invitations
