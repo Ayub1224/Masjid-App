@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { CredentialField } from '@/components/app/credential-field';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/data/api';
 import { useIdentity } from '@/components/app/providers';
@@ -11,39 +12,66 @@ import {
   Feedback,
 } from '@/components/app/primitives';
 import { Button } from '@/components/ui/button';
-import { InvitationAccountGuard } from './invitation-account-guard';
+import { LocalInvitation } from './local-invitation';
+import { Toaster, toast } from '@/components/ui/toast';
 type Method = { kind: 'password' | 'pin'; digits: number };
-export function LocalLogin({
-  recover = false,
-  invite = false,
-}: {
-  recover?: boolean;
-  invite?: boolean;
-}) {
+export function LocalLogin(props: { recover?: boolean; invite?: boolean }) {
+  return props.invite ? (
+    <LocalInvitation />
+  ) : (
+    <LocalSignIn recover={props.recover} />
+  );
+}
+function LocalSignIn({ recover = false }: { recover?: boolean }) {
   const router = useRouter();
-  const { session, reload, logout } = useIdentity();
+  const { reload } = useIdentity();
+  const initialReload = useRef(reload);
   const [identifier, setIdentifier] = useState(''),
     [method, setMethod] = useState<Method | null>(null),
-    [invitation, setInvitation] = useState(''),
     [notice, setNotice] = useState(''),
-    [ready, setReady] = useState(false),
-    [confirmation, setConfirmation] = useState<{
-      tokenHash: string;
-      type: string;
-    } | null>(null);
+    [checkingLink, setCheckingLink] = useState(false),
+    [linkError, setLinkError] = useState(false),
+    [ready, setReady] = useState(false);
   useEffect(() => {
-    const frame = requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(async () => {
       const url = new URL(window.location.href);
-      setInvitation(new URLSearchParams(url.hash.slice(1)).get('token') ?? '');
       const hash = url.searchParams.get('token_hash'),
         type = url.searchParams.get('type');
-      if (hash && (type === 'signup' || type === 'recovery')) {
-        setConfirmation({ tokenHash: hash, type });
+      if (hash && type === 'recovery') {
         window.history.replaceState(null, '', url.pathname + url.hash);
+        if (type === 'recovery') {
+          setCheckingLink(true);
+          try {
+            const result = await api<{ identifier: string; method: Method }>(
+              'auth/confirm',
+              { tokenHash: hash, type },
+            );
+            setIdentifier(result.identifier);
+            setMethod(result.method);
+            setReady(true);
+            await initialReload.current();
+          } catch {
+            setLinkError(true);
+          } finally {
+            setCheckingLink(false);
+          }
+        }
       }
     });
     return () => cancelAnimationFrame(frame);
   }, []);
+  useEffect(() => {
+    if (!linkError) return;
+    const frame = requestAnimationFrame(() => {
+      toast.add({
+        title: 'Recovery link is invalid or expired.',
+        description: 'Request a new recovery email and try again.',
+        type: 'error',
+        timeout: 10000,
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [linkError]);
   async function redirect() {
     const r = await api<{ profile: { role: string } | null }>('me');
     await reload();
@@ -55,59 +83,12 @@ export function LocalLogin({
           : '/home',
     );
   }
-  if (confirmation)
+  if (checkingLink)
     return (
-      <Panel>
-        <Form
-          submit="Confirm email link"
-          onSubmit={async () => {
-            const r = await api<{ identifier: string; method: Method }>(
-              'auth/confirm',
-              confirmation,
-            );
-            setIdentifier(r.identifier);
-            setMethod(r.method);
-            setReady(confirmation.type === 'recovery');
-            setConfirmation(null);
-            await reload();
-            setNotice('Email confirmed. Continue with your account.');
-          }}
-        >
-          <p>Confirm this account or recovery link.</p>
-        </Form>
-      </Panel>
-    );
-  if (invite && session?.profile)
-    return (
-      <InvitationAccountGuard
-        email={session.profile.email}
-        onSignOut={logout}
-      />
-    );
-  if (invite && session?.userId)
-    return (
-      <Panel>
-        <Form
-          submit="Accept invitation"
-          onSubmit={async () => {
-            await api(
-              'command',
-              { type: 'accept-invite', token: invitation },
-              { headers: { 'Idempotency-Key': crypto.randomUUID() } },
-            );
-            await redirect();
-          }}
-        >
-          <Field
-            label="Invitation token"
-            name="token"
-            value={invitation}
-            onChange={(e) => setInvitation(e.target.value)}
-            required
-          />
-          <p>Return to the original invitation link if the token is empty.</p>
-        </Form>
-      </Panel>
+      <>
+        <Toaster />
+        <Panel>Checking recovery link…</Panel>
+      </>
     );
   const label =
     method?.kind === 'password'
@@ -115,13 +96,14 @@ export function LocalLogin({
       : `${method?.digits ?? 4}-digit PIN`;
   return (
     <>
+      <Toaster />
       <PageTitle
         title={
           recover
-            ? 'Recover your account'
-            : invite
-              ? 'Join your mosque'
-              : 'Welcome back'
+            ? ready
+              ? `Reset your ${label.toLowerCase()}`
+              : 'Recover your account'
+            : 'Welcome back'
         }
         description={
           !method && !recover
@@ -139,9 +121,7 @@ export function LocalLogin({
                 : 'Send recovery email'
               : !method
                 ? 'Continue'
-                : invite
-                  ? 'Create account'
-                  : 'Sign in'
+                : 'Sign in'
           }
           onSubmit={async (f) => {
             if (recover && !ready) {
@@ -155,14 +135,13 @@ export function LocalLogin({
             if (!method) {
               const r = await api<Method>('auth/identify', {
                 identifier,
-                ...(invite ? { invitationToken: invitation } : {}),
               });
               setMethod(r);
               return;
             }
             const raw = f.get('credential');
             const secret = typeof raw === 'string' ? raw : '';
-            if ((invite || ready) && secret !== f.get('confirmation'))
+            if (ready && secret !== f.get('confirmation'))
               throw Error(`${label}s do not match.`);
             const value =
               method.kind === 'password'
@@ -179,27 +158,15 @@ export function LocalLogin({
               captchaToken: 'local',
               remember: f.get('remember') === 'on',
             };
-            if (invite) {
-              const r = await api<{ message: string }>('auth/register', {
-                ...input,
-                invitationToken: invitation,
-              });
-              setNotice(
-                r.message + ' Then return to the original invitation link.',
-              );
-            } else {
-              await api('auth/login', input);
-              await redirect();
-            }
+            await api('auth/login', input);
+            await redirect();
           }}
         >
           {!method && !ready ? (
             <Field
-              label={
-                invite || recover ? 'Email address' : 'Phone number or email'
-              }
+              label={recover ? 'Email address' : 'Phone number or email'}
               name="identifier"
-              type={invite || recover ? 'email' : 'text'}
+              type={recover ? 'email' : 'text'}
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               autoComplete="username"
@@ -225,7 +192,8 @@ export function LocalLogin({
           )}
           {method && (!recover || ready) && (
             <>
-              <Field
+              <CredentialField
+                digits={method.kind === 'pin' ? method.digits : undefined}
                 name="credential"
                 label={label}
                 type="password"
@@ -235,13 +203,12 @@ export function LocalLogin({
                 }
                 minLength={method.kind === 'password' ? 12 : method.digits}
                 maxLength={method.kind === 'password' ? 128 : method.digits}
-                autoComplete={
-                  invite || ready ? 'new-password' : 'current-password'
-                }
+                autoComplete={ready ? 'new-password' : 'current-password'}
                 required
               />
-              {(invite || ready) && (
-                <Field
+              {ready && (
+                <CredentialField
+                  digits={method.kind === 'pin' ? method.digits : undefined}
                   name="confirmation"
                   label={`Confirm ${label.toLowerCase()}`}
                   type="password"
@@ -249,7 +216,7 @@ export function LocalLogin({
                   required
                 />
               )}
-              {!invite && !recover && (
+              {!recover && (
                 <label className="flex gap-3 items-center min-h-11">
                   <input type="checkbox" name="remember" />
                   Keep me signed in

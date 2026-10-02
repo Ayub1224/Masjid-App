@@ -25,7 +25,7 @@ export function InvitationAccountGuard({
             invitation.
           </p>
           <p className="text-sm leading-6 text-muted-foreground">
-            Sign out, then continue with the email address named in the invitation.
+            Sign out to continue with the invited account.
             Your invitation link will remain open.
           </p>
         </div>

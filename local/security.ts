@@ -10,6 +10,11 @@ import nodemailer from 'nodemailer';
 import { pool, type Identity } from './db';
 import { ApiError, cookie } from '../lib/server/http';
 const scrypt = promisify(scryptCallback);
+const sessionName =
+  process.env.LOCAL_TEST === 'true' &&
+  process.env.APP_ORIGIN !== 'http://localhost:3000'
+    ? 'mosque-browser-test-session'
+    : 'mosque-local-session';
 export const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
 export const opaque = () => Buffer.from(randomBytes(32)).toString('hex');
@@ -42,11 +47,11 @@ export async function limit(key: string, max = 10) {
   if (r.rows[0].attempts > max) throw new ApiError(429, 'RATE_LIMITED');
 }
 export async function identity(request: Request): Promise<Identity> {
-  const token = cookie(request, 'mosque-local-session');
+  const token = cookie(request, sessionName);
   if (!token || !/^[a-f0-9]{64}$/.test(token))
     throw new ApiError(401, 'SIGN_IN_REQUIRED');
   const r = await pool.query(
-    `select s.*,u.email from auth.sessions s join auth.users u on u.id=s.user_id where token_hash=$1 and not_after>now() and u.email_confirmed_at is not null`,
+    `select s.*,coalesce(u.email,u.phone) email from auth.sessions s join auth.users u on u.id=s.user_id left join public.mosque_profiles p on p.id=u.id where token_hash=$1 and not_after>now() and (p.id is null or p.active) and (u.email_confirmed_at is not null or u.activated_at is not null)`,
     [hash(token)],
   );
   if (!r.rowCount) throw new ApiError(401, 'SIGN_IN_REQUIRED');
@@ -59,7 +64,7 @@ export function sessionCookie(
 ) {
   response.headers.append(
     'Set-Cookie',
-    `mosque-local-session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${seconds}`,
+    `${sessionName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${seconds}`,
   );
   return response;
 }
@@ -67,10 +72,11 @@ export async function newSession(
   userId: string,
   recovery = false,
   remember = false,
+  db: Pick<import('pg').PoolClient, 'query'> = pool,
 ) {
   const token = opaque();
   const seconds = remember ? 1209600 : 43200;
-  await pool.query(
+  await db.query(
     `insert into auth.sessions(id,user_id,not_after,token_hash,recovery) values(gen_random_uuid(),$1,now()+$2*interval '1 second',$3,$4)`,
     [userId, seconds, hash(token), recovery],
   );

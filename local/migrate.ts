@@ -73,16 +73,64 @@ if (!done.has('local-roles-v1')) {
     db.release();
   }
 }
+if (!done.has('local-administrator-rules-v2')) {
+  const db = await pool.connect();
+  try {
+    await db.query('begin');
+    await db.query(readFileSync('local/administrator-rules.sql', 'utf8'));
+    await db.query(
+      "insert into local_migrations(name) values('local-administrator-rules-v2')",
+    );
+    await db.query('commit');
+  } catch (error) {
+    await db.query('rollback');
+    throw error;
+  } finally {
+    db.release();
+  }
+}
+if (!done.has('local-people-crud-v3')) {
+  const db = await pool.connect();
+  try {
+    await db.query('begin');
+    await db.query(readFileSync('local/people-crud.sql', 'utf8'));
+    await db.query(
+      "insert into local_migrations(name) values('local-people-crud-v3')",
+    );
+    await db.query('commit');
+  } catch (error) {
+    await db.query('rollback');
+    throw error;
+  } finally {
+    db.release();
+  }
+}
+if (!done.has('local-member-contact-v4')) {
+  const db = await pool.connect();
+  try {
+    await db.query('begin');
+    await db.query(readFileSync('local/member-contact.sql', 'utf8'));
+    await db.query(
+      "insert into local_migrations(name) values('local-member-contact-v4')",
+    );
+    await db.query('commit');
+  } catch (error) {
+    await db.query('rollback');
+    throw error;
+  } finally {
+    db.release();
+  }
+}
 const email = process.env.BOOTSTRAP_EMAIL!;
 const existing = await pool.query('select id from auth.users where email=$1', [
   email,
 ]);
 if (!existing.rowCount && process.env.LOCAL_TEST !== 'true') {
   const id = randomUUID();
-  await pool.query("insert into auth.users(id,email,credential_role) values($1,$2,'super-admin')", [
-    id,
-    email,
-  ]);
+  await pool.query(
+    "insert into auth.users(id,email,credential_role) values($1,$2,'super-admin')",
+    [id, email],
+  );
   await pool.query(
     "insert into mosque_profiles(id,name,email,role) values($1,'Ayub',$2,'super-admin')",
     [id, email],

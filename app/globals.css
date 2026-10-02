@@ -304,6 +304,15 @@ textarea:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
 }
+[data-slot='input'][aria-invalid='true'],
+[data-slot='textarea'][aria-invalid='true'] {
+  border-color: var(--destructive);
+  box-shadow: var(--neo-inset), 0 0 0 1px var(--destructive);
+}
+[data-slot='input'][aria-invalid='true']:focus-visible,
+[data-slot='textarea'][aria-invalid='true']:focus-visible {
+  outline-color: var(--destructive);
+}
 [data-slot='select-trigger'] svg {
   transition: transform 260ms var(--motion-soft);
 }

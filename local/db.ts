@@ -1,8 +1,14 @@
 import pg from 'pg';
 // Business dates are calendar dates, not timestamps in the server timezone.
 pg.types.setTypeParser(1082, (value) => value);
+const connection = new URL(process.env.DATABASE_URL!);
+if (process.env.LOCAL_TEST === 'true' && process.env.LOCAL_TEST_DATABASE) {
+  if (!/^mosque_browser_[a-z0-9_]+$/.test(process.env.LOCAL_TEST_DATABASE))
+    throw Error('Invalid browser test database');
+  connection.pathname = '/' + process.env.LOCAL_TEST_DATABASE;
+}
 export const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: connection.toString(),
   max: 10,
 });
 export type Identity = {

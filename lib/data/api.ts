@@ -10,11 +10,31 @@ export class BackendError extends Error {
     super(
       (
         {
+          INVITATION_UNAVAILABLE:
+            'This invitation is invalid or has been revoked. Ask your mosque administrator for a new link.',
+          INVITATION_EXPIRED:
+            'This invitation has expired. Ask your mosque administrator for a new link.',
+          INVITATION_USED:
+            'This invitation has already been accepted. Sign in with your password or PIN.',
+          INVITATION_ACCOUNT_EXISTS:
+            'This account already has mosque access. Sign in to continue.',
+          INVITATION_ACCOUNT_MISMATCH:
+            'Sign out of the current account before joining with this invitation.',
+          LINK_EXPIRED_OR_INVALID:
+            'This link is invalid or has expired. Please request a new link.',
+          INVALID_CREDENTIALS:
+            'The password or PIN is incorrect. Please try again.',
+          PHONE_IN_USE:
+            'This mobile number already has an account or pending invitation.',
+          EMAIL_IN_USE:
+            'This email already has an account or pending invitation.',
           PERMISSION_OR_MFA_REQUIRED:
             'Permission denied. Administrators must verify their authenticator code.',
           SIGN_IN_REQUIRED: 'Please sign in again.',
           CONFLICT:
             'This record conflicts with an existing entry. Refresh and check it.',
+          INSUFFICIENT_BALANCE:
+            'The selected account has insufficient funds. Record any missing receipts or opening balance. Keep the expense as a draft until funds are available.',
           INVALID_COMMAND:
             'The record changed or the values are invalid. Refresh and try again.',
           BACKEND_NOT_CONFIGURED: 'The backend is not configured yet.',
@@ -69,6 +89,7 @@ export async function api<T = Record<string, unknown>>(
       'auth/refresh',
       'auth/recover',
       'auth/confirm',
+      'auth/invitation',
     ].includes(path)
   ) {
     refresh ??= api('auth/refresh', {}, {}, false).finally(() => {
@@ -108,7 +129,9 @@ export type Profile = {
 export type Session = { profile: Profile | null; userId: string; aal: string };
 export async function readSession(): Promise<Session | null> {
   try {
-    return await api<Session>('me');
+    const session = await api<Session>('me');
+    if (session.profile) session.profile.email ??= '';
+    return session;
   } catch (e) {
     if (e instanceof BackendError && e.status === 401) return null;
     throw e;
@@ -158,7 +181,7 @@ export async function readData(
     '/admin/members': ['profiles', 'invitations'],
     '/admin/payments': ['payments', 'names'],
     '/admin/cash': ['profiles', 'payments'],
-    '/admin/expenses': ['expenses'],
+    '/admin/expenses': ['expenses', 'finance'],
     '/admin/prayers': ['public'],
     '/admin/news': ['news'],
     '/admin/receiving': ['receiving'],
@@ -205,7 +228,7 @@ export async function readData(
     .map((m) => ({
       id: m.id,
       name: m.name,
-      email: m.email,
+      email: m.email ?? '',
       phone: m.phone,
       address: m.address,
       role: m.role,
@@ -320,12 +343,15 @@ export async function readData(
             (i): Member => ({
               id: i.id,
               name: i.name,
-              email: i.email,
+              email: i.email ?? '',
               phone: i.phone,
               address: i.address,
               role: i.role,
               permissions: i.permissions,
-              status: 'invited',
+              status:
+                new Date(i.expires_at).getTime() <= Date.now()
+                  ? 'expired'
+                  : 'invited',
               expiresAt: Date.parse(i.expires_at),
             }),
           ),
@@ -405,7 +431,7 @@ export async function mutate(
         const member = state.members.find((m) => m.id === a.id);
         body = {
           type:
-            member?.status === 'invited'
+            member?.status === 'invited' || member?.status === 'expired'
               ? 'revoke-invite'
               : a.status === 'inactive'
                 ? 'deactivate'

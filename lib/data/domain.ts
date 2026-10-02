@@ -27,7 +27,7 @@ export type Member = {
   email: string;
   phone: string;
   address: string;
-  status: 'active' | 'invited' | 'inactive';
+  status: 'active' | 'invited' | 'inactive' | 'expired';
   role: 'member' | 'admin' | 'owner';
   permissions: Permission[];
   expiresAt?: number;
@@ -273,7 +273,12 @@ export function can(
   permission: Permission,
   grants: Permission[] = [...permissions],
 ) {
-  return role === 'owner' || (role === 'admin' && grants.includes(permission));
+  return (
+    (role === 'owner' ||
+      (role === 'admin' &&
+        !['record', 'verify', 'expenses', 'receiving'].includes(permission))) &&
+    grants.includes(permission)
+  );
 }
 export function parseAmount(value: string) {
   if (!/^\d+(\.\d{1,2})?$/.test(value.trim()))

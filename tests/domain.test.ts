@@ -83,7 +83,7 @@ describe('financial preview invariants', () => {
   });
   it('bank observations never change recorded balances', async () => {
     await demoRepository.mutate('guest', { type: 'reset' });
-    await demoRepository.mutate('admin', {
+    await demoRepository.mutate('owner', {
       type: 'balance-check',
       amount: 1980000,
       date: '2026-09-08T12:00',

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { receivingDetails } from '../receiving-details';
 const uuid = z.uuid();
 const short = z.string().trim().min(1).max(200);
 const amount = z.number().int().positive().max(100000000);
@@ -116,7 +117,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   }),
   z.strictObject({
     type: z.literal('invite'),
-    email: z.email().max(254),
+    email: z.union([z.email().max(254), z.literal('')]),
     name: short.max(120),
     phone: z.string().max(25).default(''),
     address: z.string().max(500).default(''),
@@ -162,11 +163,8 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('toggle-notice'), id: uuid }),
   z.strictObject({
     type: z.literal('receiving'),
-    upi: z
-      .string()
-      .trim()
-      .regex(/^[a-zA-Z0-9._-]{2,128}@[a-zA-Z0-9.-]{2,64}$/),
-    recipient: short.max(120),
+    upi: receivingDetails.shape.upi,
+    recipient: receivingDetails.shape.recipient,
     qrPath: path,
   }),
 ]);

@@ -11,6 +11,8 @@ const url = new URL(original);
 url.pathname = '/' + name;
 process.env.DATABASE_URL = url.toString();
 process.env.LOCAL_TEST = 'true';
+delete process.env.LOCAL_TEST_DATABASE;
+process.env.APP_ORIGIN = 'http://localhost:3000';
 let close: (() => Promise<void>) | undefined;
 try {
   const migration = spawnSync('node', ['--import', 'tsx', 'local/migrate.ts'], {
@@ -55,6 +57,8 @@ try {
         records: { id: string; status: string; paid_on: string }[];
         url: string;
         invitationUrl: string;
+        joined: boolean;
+        profile: { id: string; email: string | null; phone: string };
       },
       cookie: res.headers.get('set-cookie')?.split(';')[0] ?? cookie,
     };
@@ -74,13 +78,25 @@ try {
       ],
     );
     await pool.query(
-      'insert into mosque_profiles(id,email,name,role,phone) values($1,$2,$3,$4,$5)',
+      'insert into mosque_profiles(id,email,name,role,phone,permissions) values($1,$2,$3,$4,$5,$6)',
       [
         id,
         role + '@local.test',
         role,
         role === 'owner' ? 'owner' : 'member',
         role === 'member' ? '+919876543210' : '',
+        role === 'owner'
+          ? [
+              'members',
+              'record',
+              'verify',
+              'expenses',
+              'reports',
+              'prayers',
+              'news',
+              'receiving',
+            ]
+          : [],
       ],
     );
   }
@@ -266,11 +282,12 @@ try {
       amountPaise: 100,
       date: '2026-01-01',
       category: 'UAT',
-      description: 'Granted admin expense',
+      description: 'Admin financial permissions remain unavailable',
       account: 'Cash',
       status: 'draft',
     },
     adminSession.cookie,
+    403,
   );
   await cmd(
     {
@@ -283,12 +300,60 @@ try {
     adminSession.cookie,
     403,
   );
+  const phoneInvitation = await cmd(
+    {
+      type: 'invite',
+      name: 'Phone-only admin',
+      email: '',
+      phone: '9812345678',
+      address: 'Durg',
+      role: 'admin',
+      permissions: ['news'],
+    },
+    owner.cookie,
+  );
+  const phoneToken = new URL(phoneInvitation.data.invitationUrl).hash.slice(7);
+  assert.equal(
+    (
+      await call('auth/identify', {
+        identifier: '9812345678',
+        invitationToken: phoneToken,
+      })
+    ).data.digits,
+    6,
+  );
+  const phoneJoined = await call('auth/register', {
+    identifier: '9812345678',
+    invitationToken: phoneToken,
+    pin: '837491',
+  });
+  assert.equal(phoneJoined.data.joined, true);
+  const phoneProfile = (await call('me', undefined, phoneJoined.cookie)).data
+    .profile;
+  assert.equal(phoneProfile.email, null);
+  assert.equal(phoneProfile.phone, '+919812345678');
+  const phoneLogin = await call('auth/login', {
+    identifier: '9812345678',
+    pin: '837491',
+  });
+  await call('me', undefined, phoneLogin.cookie);
+  await call(
+    'auth/register',
+    { identifier: '9812345678', invitationToken: phoneToken, pin: '837491' },
+    '',
+    410,
+  );
+  await cmd(
+    { type: 'permissions', id: phoneProfile.id, permissions: ['verify'] },
+    owner.cookie,
+    400,
+  );
   const adminInvite = {
     type: 'invite',
     email: 'newadmin@local.test',
     name: 'New admin',
-    phone: '',
-    address: '',
+    phone: '+919812345679',
+    address: 'Durg',
     role: 'admin',
     permissions: ['news'],
   };
@@ -320,8 +385,8 @@ try {
       type: 'invite',
       email: 'invited@local.test',
       name: 'Invited UAT',
-      phone: '',
-      address: '',
+      phone: '+919876540123',
+      address: 'Durg',
       role: 'member',
       permissions: [],
     },
@@ -337,13 +402,13 @@ try {
       invitationToken,
     },
     '',
-    202,
+    200,
   );
   await call(
     'auth/login',
     { identifier: 'invited@local.test', pin: '5839', captchaToken: 'local' },
     '',
-    401,
+    200,
   );
   // Issue a known one-use token in the isolated test DB to exercise confirmation.
   const { hash } = await import('./security');
@@ -367,10 +432,7 @@ try {
     '',
     400,
   );
-  await cmd(
-    { type: 'accept-invite', token: invitationToken },
-    confirmed.cookie,
-  );
+
   await call('auth/password', { pin: '123456' }, confirmed.cookie, 403);
   await call(
     'auth/recover',

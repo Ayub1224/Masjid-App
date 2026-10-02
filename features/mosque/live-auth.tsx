@@ -1,4 +1,5 @@
 'use client';
+import { CredentialField } from '@/components/app/credential-field';
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useRouter } from 'next/navigation';
@@ -96,6 +97,13 @@ export function LiveLogin(props: { recover?: boolean; invite?: boolean }) {
     retry: 3,
     refetchOnWindowFocus: true,
   });
+  // Wait for the backend choice before mounting either link consumer.
+  // HostedLogin removes confirmation parameters when it mounts.
+  if (settings.isPending) return <Panel>Loading…</Panel>;
+  if (settings.isError)
+    return (
+      <Panel>Unable to load sign-in settings. Please refresh to retry.</Panel>
+    );
   return settings.data?.local ? (
     <LocalLogin {...props} />
   ) : (
@@ -287,7 +295,8 @@ function HostedLogin({
             />
           )}
           {(invite || resetReady || (!recover && identifyReady)) && (
-            <Field
+            <CredentialField
+              digits={6}
               label="6-digit PIN"
               name="pin"
               type="password"
@@ -425,7 +434,8 @@ export function MfaSetup() {
             await reload();
           }}
         >
-          <Field
+          <CredentialField
+            digits={6}
             label="Authenticator code"
             name="code"
             inputMode="numeric"

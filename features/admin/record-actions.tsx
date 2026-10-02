@@ -1,7 +1,8 @@
 'use client';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/data/api';
+import { api, BackendError } from '@/lib/data/api';
+import { profileInput } from '@/lib/administrator-invitation';
 import type { Member, Expense, Notice } from '@/lib/data/domain';
 import { parseAmount } from '@/lib/data/domain';
 import { useIdentity } from '@/components/app/providers';
@@ -79,8 +80,10 @@ export function RecordActions({
 }) {
   const cache = useQueryClient();
   const [mode, setMode] = useState<'edit' | 'delete' | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   if (
-    (kind === 'member' && (record as Member).status === 'invited') ||
+    (kind === 'member' &&
+      ['invited', 'expired'].includes((record as Member).status)) ||
     (kind === 'expense' && (record as Expense).status !== 'draft')
   )
     return null;
@@ -92,7 +95,10 @@ export function RecordActions({
       <Button
         variant="outline"
         className="h-11"
-        onClick={() => setMode('edit')}
+        onClick={() => {
+          setErrors({});
+          setMode('edit');
+        }}
       >
         Edit
       </Button>
@@ -118,6 +124,7 @@ export function RecordActions({
         }
       >
         <Form
+          noValidate={kind === 'member'}
           submit={mode === 'delete' ? 'Delete record' : 'Save changes'}
           onSubmit={async (f) => {
             const val = (key: string) =>
@@ -127,13 +134,23 @@ export function RecordActions({
               id: record.id,
             };
             if (mode === 'edit') {
-              if (kind === 'member')
-                body = {
-                  ...body,
+              if (kind === 'member') {
+                const result = profileInput(member.role).safeParse({
                   name: val('name'),
                   phone: val('phone'),
                   address: val('address'),
-                };
+                });
+                if (!result.success) {
+                  const next: Record<string, string> = {};
+                  for (const issue of result.error.issues)
+                    next[String(issue.path[0])] ??= issue.message;
+                  setErrors(next);
+                  document.getElementById(Object.keys(next)[0])?.focus();
+                  return;
+                }
+                body = { ...body, ...result.data };
+                setErrors({});
+              }
               if (kind === 'expense')
                 body = {
                   ...body,
@@ -155,9 +172,22 @@ export function RecordActions({
                   image: val('image'),
                 };
             }
-            await api('command', body, {
-              headers: { 'Idempotency-Key': crypto.randomUUID() },
-            });
+            try {
+              await api('command', body, {
+                headers: { 'Idempotency-Key': crypto.randomUUID() },
+              });
+            } catch (error) {
+              if (
+                kind === 'member' &&
+                error instanceof BackendError &&
+                error.code === 'PHONE_IN_USE'
+              ) {
+                setErrors({ phone: error.message });
+                document.getElementById('phone')?.focus();
+                return;
+              }
+              throw error;
+            }
             await cache.invalidateQueries({ queryKey: ['mosque-data'] });
             setMode(null);
           }}
@@ -171,19 +201,25 @@ export function RecordActions({
               <Field
                 label="Name"
                 name="name"
+                error={errors.name}
                 defaultValue={member.name}
                 required
                 maxLength={120}
               />
               <Field
-                label="Phone (include country code)"
+                label="Indian mobile number"
                 name="phone"
+                type="tel"
+                required
+                error={errors.phone}
                 defaultValue={member.phone}
                 maxLength={25}
               />
               <Field
                 label="Address"
                 name="address"
+                required
+                error={errors.address}
                 defaultValue={member.address}
                 maxLength={500}
               />

@@ -1,10 +1,15 @@
 'use client';
-import { api, invitationLinks } from '@/lib/data/api';
+import { receivingDetails } from '@/lib/receiving-details';
+import { api, invitationLinks, BackendError } from '@/lib/data/api';
 import { RecordActions, OpeningBalance } from './record-actions';
 import { initialPrayers } from '@/config/mosque';
 /* oxlint-disable next/no-img-element -- User-selected data URLs must remain local previews, without an image optimizer. */
 import Link from 'next/link';
 import { useState } from 'react';
+import {
+  invitationInput,
+  paymentPermissions,
+} from '@/lib/administrator-invitation';
 import {
   Users,
   Plus,
@@ -181,17 +186,27 @@ export function Members({
   const [open, setOpen] = useState(false),
     [created, setCreated] = useState(''),
     [editing, setEditing] = useState<Member | null>(null),
-    [notice, setNotice] = useState('');
+    [notice, setNotice] = useState(''),
+    [noticeError, setNoticeError] = useState(false);
   const rows = data.members.filter((m) =>
     administrators ? m.role !== 'member' : m.role === 'member',
   );
   async function change(id: string, status: 'inactive' | 'invited') {
     try {
+      setNoticeError(false);
+      const pending = ['invited', 'expired'].includes(
+        rows.find((m) => m.id === id)?.status ?? '',
+      );
       await action.mutateAsync({ type: 'member-status', id, status });
       setNotice(
-        status === 'inactive' ? 'Access deactivated.' : 'Access reactivated.',
+        pending
+          ? 'Invitation revoked.'
+          : status === 'inactive'
+            ? 'Access deactivated.'
+            : 'Access reactivated.',
       );
     } catch (e) {
+      setNoticeError(true);
       setNotice((e as Error).message);
     }
   }
@@ -202,7 +217,9 @@ export function Members({
       cell: ({ row }) => (
         <div>
           <p className="font-medium">{row.original.name}</p>
-          <p className="text-xs text-muted-foreground">{row.original.email}</p>
+          <p className="text-xs text-muted-foreground">
+            {row.original.email || row.original.phone}
+          </p>
         </div>
       ),
     },
@@ -225,7 +242,8 @@ export function Members({
             <RecordActions record={row.original} kind="member" />
           )}
           {administrators &&
-            row.original.role === 'admin' &&
+            (row.original.role === 'admin' ||
+              (row.original.role === 'owner' && actorRole === 'super-admin')) &&
             row.original.status === 'active' && (
               <Button
                 variant="ghost"
@@ -248,7 +266,7 @@ export function Members({
             >
               {row.original.status === 'inactive'
                 ? 'Reactivate'
-                : row.original.status === 'invited'
+                : ['invited', 'expired'].includes(row.original.status)
                   ? 'Revoke'
                   : 'Deactivate'}
             </Button>
@@ -290,7 +308,11 @@ export function Members({
             <ShieldCheck className="mb-3 size-5 text-primary" />
             <p className="font-medium">Owner seat</p>
             <p className="text-sm text-muted-foreground">
-              {rows.some((m) => m.role === 'owner' && m.status !== 'inactive')
+              {rows.some(
+                (m) =>
+                  m.role === 'owner' &&
+                  ['active', 'invited'].includes(m.status),
+              )
                 ? '1 of 1 occupied'
                 : 'Available'}
             </p>
@@ -312,7 +334,7 @@ export function Members({
           </Panel>
         </div>
       )}
-      <Feedback message={notice} />
+      <Feedback message={notice} error={noticeError} />
       <DataTable
         data={rows}
         columns={cols}
@@ -333,7 +355,10 @@ export function Members({
         description="Owners set a password and MFA. Admins set a 6-digit PIN; members set a 4-digit PIN."
       >
         {created ? (
-          <InviteResult id={created} />
+          <InviteResult
+            id={created}
+            name={data.members.find((m) => m.id === created)?.name}
+          />
         ) : (
           <InvitationForm
             data={data}
@@ -347,7 +372,7 @@ export function Members({
         onOpenChange={(v) => {
           if (!v) setEditing(null);
         }}
-        title="Admin permissions"
+        title="Administrator permissions"
       >
         {editing && (
           <PermissionEditor member={editing} onDone={() => setEditing(null)} />
@@ -367,86 +392,152 @@ function InvitationForm({
 }) {
   const action = useMosqueAction();
   const { role: actorRole } = useIdentity();
-  const [grants, setGrants] = useState<Permission[]>([...permissions]);
+  const [selectedRole, setSelectedRole] = useState<
+    'admin' | 'owner' | 'member'
+  >(administrators ? 'admin' : 'member');
+  const [grants, setGrants] = useState<Permission[]>(
+    permissions.filter((p) => !paymentPermissions.includes(p)),
+  );
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const ownerOccupied = data.members.some(
+    (m) => m.role === 'owner' && ['active', 'invited'].includes(m.status),
+  );
+  const clearError = (name: string) =>
+    setErrors((current) => ({ ...current, [name]: '' }));
   return (
     <Form
+      noValidate
       submit="Create invitation"
       onSubmit={async (f) => {
-        const r = await action.mutateAsync({
-          type: 'invite',
-          member: {
-            name: value(f, 'name'),
-            email: value(f, 'email'),
-            phone: value(f, 'phone'),
-            address: value(f, 'address'),
-            role: administrators
-              ? (value(f, 'role') as 'admin' | 'owner')
-              : 'member',
-            permissions: administrators ? grants : [],
-          },
+        const result = invitationInput.safeParse({
+          name: value(f, 'name'),
+          email: value(f, 'email'),
+          phone: value(f, 'phone'),
+          address: value(f, 'address'),
+          role: selectedRole,
+          permissions: administrators ? grants : [],
         });
-        onCreated(r.id);
+        if (!result.success) {
+          const next: Record<string, string> = {};
+          for (const issue of result.error.issues)
+            next[String(issue.path[0])] ??= issue.message;
+          setErrors(next);
+          document.getElementById(Object.keys(next)[0])?.focus();
+          return;
+        }
+        setErrors({});
+        try {
+          const r = await action.mutateAsync({
+            type: 'invite',
+            member: result.data,
+          });
+          onCreated(r.id);
+        } catch (error) {
+          if (
+            error instanceof BackendError &&
+            ['PHONE_IN_USE', 'EMAIL_IN_USE'].includes(error.code)
+          ) {
+            const field = error.code === 'PHONE_IN_USE' ? 'phone' : 'email';
+            setErrors({ [field]: error.message });
+            document.getElementById(field)?.focus();
+            return;
+          }
+          throw error;
+        }
       }}
     >
+      {administrators && (
+        <Field name="role" label="Role" required>
+          <Choice
+            name="role"
+            value={selectedRole}
+            onChange={(role) => {
+              const next = role as 'admin' | 'owner';
+              setSelectedRole(next);
+              setGrants(
+                next === 'owner'
+                  ? [...permissions]
+                  : permissions.filter((p) => !paymentPermissions.includes(p)),
+              );
+              setErrors({});
+            }}
+          >
+            <option value="admin">Admin</option>
+            {actorRole === 'super-admin' && (
+              <option value="owner" disabled={ownerOccupied}>
+                Owner{ownerOccupied ? ' — seat occupied' : ''}
+              </option>
+            )}
+          </Choice>
+        </Field>
+      )}
       <Field
         name="name"
         label="Full name"
         required
         maxLength={100}
-        placeholder="Full name"
+        error={errors.name}
+        onChange={() => clearError('name')}
       />
-      <Field
-        name="email"
-        label="Email address"
-        required
-        type="email"
-        placeholder="member@example.com"
-      />
+      {administrators && (
+        <Field
+          name="email"
+          label={
+            selectedRole === 'admin'
+              ? 'Email address (optional)'
+              : 'Email address'
+          }
+          required={selectedRole === 'owner'}
+          type="email"
+          maxLength={254}
+          error={errors.email}
+          onChange={() => clearError('email')}
+        />
+      )}
       <Field
         name="phone"
-        label="Phone number (optional)"
+        label="Indian mobile number"
+        required
         type="tel"
-        maxLength={20}
+        inputMode="tel"
+        maxLength={25}
+        placeholder="9876543210 or +91 9876543210"
+        error={errors.phone}
+        onChange={() => clearError('phone')}
       />
-      <Field name="address" label="Address (optional)" maxLength={250} />
+      <Field
+        name="address"
+        label="Address"
+        required
+        maxLength={500}
+        error={errors.address}
+        onChange={() => clearError('address')}
+      />
       {administrators && (
         <>
-          <Field name="role" label="Role">
-            <Choice name="role" defaultValue="admin">
-              <option value="admin">Admin</option>
-              {actorRole === 'super-admin' && (
-                <option
-                  value="owner"
-                  disabled={data.members.some(
-                    (m) => m.role === 'owner' && m.status !== 'inactive',
-                  )}
-                >
-                  Owner{' '}
-                  {data.members.some(
-                    (m) => m.role === 'owner' && m.status !== 'inactive',
-                  )
-                    ? '— seat occupied'
-                    : ''}
-                </option>
-              )}
-            </Choice>
-          </Field>
           <Disclosure title="Permissions">
-            <PermissionSwitches grants={grants} onChange={setGrants} />
+            <PermissionSwitches
+              grants={grants}
+              onChange={setGrants}
+              role={selectedRole}
+            />
           </Disclosure>
           <p className="text-xs text-muted-foreground">
             Owners use a password and authenticator. Admins use a 6-digit PIN.
-            Only the owner can reverse financial entries.
+            Payment permissions are unavailable to admins.
           </p>
         </>
       )}
     </Form>
   );
 }
+
 function PermissionSwitches({
   grants,
   onChange,
+  role = 'owner',
 }: {
+  role?: string;
   grants: Permission[];
   onChange: (p: Permission[]) => void;
 }) {
@@ -461,7 +552,11 @@ function PermissionSwitches({
           <span>{permissionLabels[p]}</span>
           <Switch
             id={`grant-${p}`}
-            checked={grants.includes(p)}
+            disabled={role === 'admin' && paymentPermissions.includes(p)}
+            checked={
+              !(role === 'admin' && paymentPermissions.includes(p)) &&
+              grants.includes(p)
+            }
             onCheckedChange={(checked) =>
               onChange(checked ? [...grants, p] : grants.filter((g) => g !== p))
             }
@@ -478,7 +573,11 @@ function PermissionEditor({
   member: Member;
   onDone: () => void;
 }) {
-  const [grants, setGrants] = useState(member.permissions);
+  const [grants, setGrants] = useState(
+    member.permissions.filter(
+      (p) => member.role !== 'admin' || !paymentPermissions.includes(p),
+    ),
+  );
   const action = useMosqueAction();
   return (
     <Form
@@ -492,11 +591,15 @@ function PermissionEditor({
         onDone();
       }}
     >
-      <PermissionSwitches grants={grants} onChange={setGrants} />
+      <PermissionSwitches
+        grants={grants}
+        onChange={setGrants}
+        role={member.role}
+      />
     </Form>
   );
 }
-function InviteResult({ id }: { id: string }) {
+function InviteResult({ id, name }: { id: string; name?: string }) {
   const [notice, setNotice] = useState('');
   const url =
     typeof window === 'undefined' ? '' : (invitationLinks.get(id) ?? '');
@@ -519,7 +622,7 @@ function InviteResult({ id }: { id: string }) {
     <div className="space-y-5">
       <div className="flex items-center gap-3 text-success">
         <Check />
-        Invitation prepared
+        {name ? `Invitation ready for ${name}` : 'Invitation ready'}
       </div>
       <Input
         readOnly
@@ -962,6 +1065,10 @@ export function Expenses({ data }: { data: DemoState }) {
   const [open, setOpen] = useState(false),
     [reverse, setReverse] = useState<Expense | null>(null),
     [notice, setNotice] = useState('');
+  const [noticeError, setNoticeError] = useState(false);
+  const [account, setAccount] = useState<'Bank' | 'Cash'>('Bank');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const available = data.balance?.[account === 'Bank' ? 'bank' : 'cash'] ?? 0;
   const columns: ColumnDef<Expense, unknown>[] = [
     { accessorKey: 'description', header: 'Description' },
     {
@@ -992,7 +1099,10 @@ export function Expenses({ data }: { data: DemoState }) {
                     type: 'post-expense',
                     id: row.original.id,
                   });
+                  setNoticeError(false);
+                  setNotice('Expense marked as paid.');
                 } catch (e) {
+                  setNoticeError(true);
                   setNotice((e as Error).message);
                 }
               }}
@@ -1016,47 +1126,100 @@ export function Expenses({ data }: { data: DemoState }) {
       <PageTitle
         title="Expenses"
         action={
-          <Button className="h-11" onClick={() => setOpen(true)}>
+          <Button
+            className="h-11"
+            onClick={() => {
+              setFieldErrors({});
+              setAccount('Bank');
+              setOpen(true);
+            }}
+          >
             <Plus />
             Add expense
           </Button>
         }
       />
-      <Feedback message={notice} error />
+      <Feedback message={notice} error={noticeError} />
       <DataTable data={data.expenses} columns={columns} />
       <Modal open={open} onOpenChange={setOpen} title="Add expense">
         <Form
           submit="Save expense"
+          noValidate
           onSubmit={async (f) => {
-            validateDate(value(f, 'date'));
-            await action.mutateAsync({
-              type: 'expense',
-              expense: {
-                amount: parseAmount(value(f, 'amount')),
-                date: value(f, 'date'),
-                category: value(f, 'category'),
-                description: value(f, 'description'),
-                account: value(f, 'account') as 'Bank' | 'Cash',
-                status: value(f, 'status') as 'draft' | 'paid',
-              },
-            });
+            const errors: Record<string, string> = {};
+            let amount = 0;
+            if (!value(f, 'description').trim())
+              errors.description = 'Enter an expense description.';
+            try {
+              amount = parseAmount(value(f, 'amount'));
+            } catch (e) {
+              errors.amount = (e as Error).message;
+            }
+            try {
+              validateDate(value(f, 'date'));
+            } catch (e) {
+              errors.date = (e as Error).message;
+            }
+            if (
+              !errors.amount &&
+              value(f, 'status') === 'paid' &&
+              amount > available
+            )
+              errors.amount = `Only ${money(available)} is available in ${account.toLowerCase()}. Record missing receipts or save as a draft.`;
+            setFieldErrors(errors);
+            if (Object.keys(errors).length) {
+              document.getElementById(Object.keys(errors)[0])?.focus();
+              return;
+            }
+            try {
+              await action.mutateAsync({
+                type: 'expense',
+                expense: {
+                  amount,
+                  date: value(f, 'date'),
+                  category: value(f, 'category'),
+                  description: value(f, 'description'),
+                  account: value(f, 'account') as 'Bank' | 'Cash',
+                  status: value(f, 'status') as 'draft' | 'paid',
+                },
+              });
+            } catch (e) {
+              if (
+                e instanceof BackendError &&
+                e.code === 'INSUFFICIENT_BALANCE'
+              ) {
+                setFieldErrors({ amount: e.message });
+                document.getElementById('amount')?.focus();
+                return;
+              }
+              throw e;
+            }
+            setNoticeError(false);
+            setNotice(
+              value(f, 'status') === 'draft'
+                ? 'Expense saved as a draft.'
+                : 'Expense recorded as paid.',
+            );
             setOpen(false);
           }}
         >
           <Field
             name="description"
+            error={fieldErrors.description}
             label="Description"
             required
             maxLength={200}
           />
           <Field
             name="amount"
+            error={fieldErrors.amount}
             label="Amount (₹)"
             inputMode="decimal"
             required
           />
           <Field
             name="date"
+            error={fieldErrors.date}
             label="Date"
             type="date"
             defaultValue={new Intl.DateTimeFormat('en-CA', {
@@ -1073,14 +1236,25 @@ export function Expenses({ data }: { data: DemoState }) {
               </Choice>
             </Field>
             <Field name="account" label="Paid from">
-              <Choice name="account">
+              <Choice
+                name="account"
+                value={account}
+                onChange={(e) => {
+                  setAccount(e as 'Bank' | 'Cash');
+                  setFieldErrors({});
+                }}
+              >
                 <option>Bank</option>
                 <option>Cash</option>
               </Choice>
             </Field>
           </div>
+          <output className="block text-sm text-muted-foreground">
+            Available in {account.toLowerCase()}:{' '}
+            <strong>{money(available)}</strong>. Drafts do not deduct money.
+          </output>
           <Field name="status" label="Status">
-            <Choice name="status">
+            <Choice name="status" onChange={() => setFieldErrors({})}>
               <option value="draft">Draft — not yet paid</option>
               <option value="paid">Paid</option>
             </Choice>
@@ -1413,6 +1587,8 @@ export function Receiving({ data }: { data: DemoState }) {
   const action = useMosqueAction();
   const [image, setImage] = useState(data.receiving.image ?? ''),
     [notice, setNotice] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [readingImage, setReadingImage] = useState(false);
   return (
     <div className="max-w-xl">
       <PageTitle
@@ -1422,12 +1598,30 @@ export function Receiving({ data }: { data: DemoState }) {
       <Panel>
         <Form
           submit="Save receiving details"
+          noValidate
+          pending={readingImage}
           onSubmit={async (f) => {
+            setNotice('');
+            const result = receivingDetails.safeParse({
+              recipient: value(f, 'recipient'),
+              upi: value(f, 'upi'),
+            });
+            const next: Record<string, string> = {};
+            if (!result.success)
+              for (const issue of result.error.issues)
+                next[String(issue.path[0])] ??= issue.message;
+            if (!image && !data.receiving.qrPath)
+              next.qr = 'Choose the mosque’s payment QR image.';
+            setErrors(next);
+            if (Object.keys(next).length) {
+              document.getElementById(Object.keys(next)[0])?.focus();
+              return;
+            }
+            if (!result.success) return;
             await action.mutateAsync({
               type: 'receiving',
               receiving: {
-                recipient: value(f, 'recipient'),
-                upi: value(f, 'upi'),
+                ...result.data,
                 image,
               },
             });
@@ -1437,28 +1631,49 @@ export function Receiving({ data }: { data: DemoState }) {
           <Field
             name="recipient"
             label="Recipient name"
+            maxLength={120}
+            error={errors.recipient}
+            onChange={() => setErrors((e) => ({ ...e, recipient: '' }))}
             defaultValue={data.receiving.recipient}
             required
           />
           <Field
             name="upi"
-            label="UPI placeholder"
+            label="UPI ID"
+            required
+            error={errors.upi}
+            onChange={() => setErrors((e) => ({ ...e, upi: '' }))}
             defaultValue={data.receiving.upi}
-            placeholder="[UPI ID]"
+            placeholder="masjid@bank"
+            autoCapitalize="none"
+            spellCheck={false}
           />
-          <Field name="qr" label="QR image preview">
+          <p className="text-sm text-muted-foreground">
+            Enter the UPI ID shown in the receiving account’s payment app,
+            including @ and the bank handle.
+          </p>
+          <Field name="qr" label="Payment QR image" required error={errors.qr}>
             <Input
               id="qr"
               type="file"
+              aria-invalid={!!errors.qr}
+              aria-describedby={errors.qr ? 'qr-error' : undefined}
               accept="image/png,image/jpeg,image/webp"
               onChange={async (e) => {
                 const f = e.target.files?.[0];
                 if (f)
                   try {
+                    setReadingImage(true);
+                    setErrors((e) => ({ ...e, qr: '' }));
                     setImage(await readImage(f));
                     setNotice('');
                   } catch (e) {
-                    setNotice((e as Error).message);
+                    setErrors((current) => ({
+                      ...current,
+                      qr: (e as Error).message,
+                    }));
+                  } finally {
+                    setReadingImage(false);
                   }
               }}
               className="h-12"
@@ -1472,8 +1687,8 @@ export function Receiving({ data }: { data: DemoState }) {
             />
           )}
           <p className="text-xs text-muted-foreground">
-            Verify the UPI recipient before saving. Updates require receiving
-            permission and record the editor.
+            Check that the UPI ID and QR image belong to the same recipient
+            before saving.
           </p>
         </Form>
         <div className="mt-4">

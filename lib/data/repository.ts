@@ -47,8 +47,14 @@ export type Action =
   | { type: 'receiving'; receiving: DemoState['receiving'] }
   | { type: 'reset' };
 function requirePower(role: Role, p: Permission) {
-  const admin = current().members.find((m) => m.id === 'a1');
-  if (!can(role, p, admin?.status === 'active' ? admin.permissions : []))
+  const administrator = current().members.find((m) => m.role === role);
+  if (
+    !can(
+      role,
+      p,
+      administrator?.status === 'active' ? administrator.permissions : [],
+    )
+  )
     throw Error('This demo role does not have that permission.');
 }
 /** In-memory preview adapter. Replace with authenticated Supabase/API calls; not a security boundary. */

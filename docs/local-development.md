@@ -29,3 +29,19 @@ PostgreSQL, uploaded files, and mail use separate persistent Docker volumes. Do 
 The app container runs Node 24, a local Node API, and Vite on port 3000. The API uses PostgreSQL transactions with the existing `anon` and `authenticated` database roles for record access and commands. The `auth` and `storage` SQL schemas are local compatibility schemas, not Supabase services. The historical SQL migrations are reused from `supabase/migrations` to retain the audited financial rules. The original hosted API files are not used in this Docker path.
 
 Only app port 3000 and inbox port 8025 are published, both on 127.0.0.1. PostgreSQL is accessible only inside the Docker network. Uploaded images are private files in the Docker volume, served after session and database policy checks. Host disk encryption and backups remain the machine owner's responsibility.
+
+## Administrator invitations
+
+Choose the role before entering contact details. Owner invitations require email, Indian mobile number and address; admin invitations require Indian mobile number and address, with email optional. Mobile numbers must start with 6–9 and contain ten national digits; +91 is accepted and stored canonically. Field validation is shared with the local backend.
+
+Owners start with every listed permission enabled; the super administrator can turn each permission on or off. Admin payment permissions (record contributions, verify payments, expenses, receiving details) are always off and cannot be granted through the API or database command. Existing owners retain their permissions on migration. Admin financial access is denied even if older records contain those grants.
+
+For admins without email, share the private invitation link directly. The recipient enters the invited mobile number and creates a six-digit PIN; accepting the single-use link activates their account. This proves possession of the invitation, not ownership of the phone through SMS. No placeholder email or outgoing SMS is generated. Email-based recovery requires an email address; phone-only account recovery still needs an operator workflow before public deployment.
+
+## Invitation and expense regression checks
+
+Invitation links open a personalized greeting and role-specific password/PIN setup. The server validates and consumes the invitation atomically with account activation and membership creation. There is no second email-confirmation screen or manual token field. Administrators and owners still complete MFA before managing records. Legacy signup confirmation links also finish the pending invitation automatically. Revoked, expired and used links give distinct messages.
+
+Expenses show the selected account’s current recorded balance. Drafts do not affect the ledger. Paid expenses and posting a draft require sufficient funds in that account; the server checks this transactionally. Insufficient funds highlight the amount field, and failed posting reports the actual cause. Record genuine opening funds/receipts before posting expenses; do not invent balances to bypass this check. Posted expenses preserve history through reversals.
+
+Run `docker exec mosque-local-app-1 node --import tsx local/verify-journeys.ts` for isolated invitation, people CRUD and expense API checks. Run `docker exec mosque-local-app-1 node --import tsx local/verify.ts` for authentication, MFA, RLS and payment checks. Both create and remove disposable databases. Use the named main container when a separate browser QA container is running.

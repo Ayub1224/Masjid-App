@@ -86,10 +86,14 @@ export function Field({
   label,
   name,
   children,
+  error,
   ...props
-}: { label: string; name: string; children?: ReactNode } & React.ComponentProps<
-  typeof Input
->) {
+}: {
+  label: string;
+  name: string;
+  children?: ReactNode;
+  error?: string;
+} & React.ComponentProps<typeof Input>) {
   return (
     <div className="space-y-2">
       <Label htmlFor={name} className="text-sm">
@@ -100,9 +104,20 @@ export function Field({
         <Input
           id={name}
           name={name}
+          aria-invalid={!!error}
+          aria-describedby={error ? `${name}-error` : undefined}
           className="h-12 bg-background/30 text-base"
           {...props}
         />
+      )}
+      {error && (
+        <p
+          id={`${name}-error`}
+          role="alert"
+          className="text-sm text-destructive"
+        >
+          {error}
+        </p>
       )}
     </div>
   );
@@ -110,7 +125,7 @@ export function Field({
 export function Status({ status }: { status: string }) {
   const { t } = usePreferences();
   const good = ['verified', 'active', 'paid'].includes(status),
-    bad = ['rejected', 'inactive', 'reversed'].includes(status);
+    bad = ['rejected', 'inactive', 'reversed', 'expired'].includes(status);
   const labels: Record<string, [string, string]> = {
     pending: ['Pending verification', 'सत्यापन बाकी'],
     verified: ['Verified', 'सत्यापित'],
@@ -118,6 +133,7 @@ export function Status({ status }: { status: string }) {
     reversed: ['Reversed', 'वापस किया गया'],
     active: ['Active', 'सक्रिय'],
     invited: ['Invited', 'आमंत्रित'],
+    expired: ['Expired', 'समय समाप्त'],
     inactive: ['Inactive', 'निष्क्रिय'],
     draft: ['Draft', 'मसौदा'],
     paid: ['Paid', 'भुगतान किया'],
@@ -162,11 +178,13 @@ export function Form({
   onSubmit,
   submit = 'Save',
   pending = false,
+  noValidate = false,
 }: {
   children: ReactNode;
   onSubmit: (data: FormData) => Promise<void> | void;
   submit?: string;
   pending?: boolean;
+  noValidate?: boolean;
 }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -186,7 +204,7 @@ export function Form({
     }
   }
   return (
-    <form onSubmit={handle} className="space-y-5">
+    <form onSubmit={handle} noValidate={noValidate} className="space-y-5">
       {children}
       <Feedback message={error} error />
       <Button
@@ -242,11 +260,15 @@ export function Choice({
   name,
   children,
   defaultValue,
+  value,
+  onChange,
   required = false,
 }: {
   name: string;
   children: ReactNode;
   defaultValue?: string;
+  value?: string;
+  onChange?: (value: string) => void;
   required?: boolean;
 }) {
   return (
@@ -254,6 +276,8 @@ export function Choice({
       id={name}
       name={name}
       defaultValue={defaultValue}
+      value={value}
+      onChange={onChange}
       required={required}
       className="h-12 w-full rounded-lg border bg-background px-3 text-base outline-ring"
     >

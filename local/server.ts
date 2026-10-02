@@ -1,4 +1,14 @@
+import {
+  previewInvitation,
+  registerInvitation,
+  completeConfirmedInvitation,
+} from './invitations';
 import { mosqueDetailsSchema } from '../lib/mosque-details';
+import {
+  invitationInput,
+  indianMobile,
+  profileInput,
+} from '../lib/administrator-invitation';
 import { createServer } from 'node:http';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -29,7 +39,13 @@ import {
 import { commandSchema, fileRequest } from '../lib/server/validation';
 import { loginInput, credential, method, findAccount } from './credentials';
 const origin = process.env.APP_ORIGIN!;
-if (origin !== 'http://localhost:3000')
+if (
+  origin !== 'http://localhost:3000' &&
+  !(
+    process.env.LOCAL_TEST === 'true' &&
+    /^http:\/\/localhost:[0-9]{4,5}$/.test(origin)
+  )
+)
   throw Error('Local server requires localhost origin');
 const columns: Record<string, string> = {
   mosque_profiles: 'id,name,email,phone,address,role,active,permissions',
@@ -103,10 +119,11 @@ export async function handle(request: Request): Promise<Response> {
       let role: string | undefined;
       if (input.invitationToken) {
         const r = await pool.query(
-          'select role from mosque_private.invitations where token_hash=$1 and email=$2 and revoked_at is null and accepted_at is null and expires_at>now()',
+          'select role from mosque_private.invitations where token_hash=$1 and (email=$2 or phone=$3) and revoked_at is null and accepted_at is null and expires_at>now()',
           [
             Buffer.from(hash(input.invitationToken), 'hex'),
             input.identifier.toLowerCase(),
+            indianMobile(input.identifier),
           ],
         );
         role = r.rows[0]?.role;
@@ -120,13 +137,15 @@ export async function handle(request: Request): Promise<Response> {
       const lookup = await pool.query(
         'select mosque_login_identity($1,$2) email',
         [
-          (await findAccount(input.identifier))?.email ?? input.identifier,
+          (await findAccount(input.identifier))?.email ??
+            indianMobile(input.identifier) ??
+            input.identifier,
           process.env.LOGIN_GATE_SECRET,
         ],
       );
       const email = lookup.rows[0].email;
       const result = await pool.query(
-        'select u.*,coalesce(p.role,u.credential_role) role from auth.users u left join mosque_profiles p on p.id=u.id where u.email=$1',
+        'select u.*,coalesce(p.role,u.credential_role) role from auth.users u left join mosque_profiles p on p.id=u.id where (u.email=$1 or u.id::text=$1) and (p.id is null or p.active)',
         [email],
       );
       const user = result.rows[0];
@@ -135,48 +154,41 @@ export async function handle(request: Request): Promise<Response> {
           user ? credential(input, user.role) : 'invalid',
           user?.pin_hash ?? null,
         )) ||
-        !user?.email_confirmed_at
+        !(user?.email_confirmed_at || user?.activated_at)
       )
         throw new ApiError(401, 'INVALID_CREDENTIALS');
       const s = await newSession(user.id, false, input.remember);
       return sessionCookie(json({ ok: true }), s.token, s.seconds);
     }
+    if (path === 'auth/invitation' && post) {
+      const { token } = z
+        .object({ token: z.string().max(128) })
+        .parse(await bodyJson(request));
+      await limit('invitation-preview', 120);
+      return json(await previewInvitation(token));
+    }
     if (path === 'auth/register' && post) {
-      const input = loginInput
-        .extend({
-          identifier: z.email(),
+      const input = z
+        .object({
+          identifier: z.string().trim().max(254).optional(),
           invitationToken: z.string().regex(/^[a-f0-9]{64}$/),
+          password: z.string().max(128).optional(),
+          pin: z.string().max(128).optional(),
         })
         .parse(await bodyJson(request));
       await limit('registration', 30);
-      const email = input.identifier.toLowerCase();
-      const valid = await asUser(null, (db) =>
-        db.query('select mosque_invitation_valid($1,$2) valid', [
-          input.invitationToken,
-          email,
-        ]),
-      );
-      if (!valid.rows[0].valid)
-        throw new ApiError(400, 'INVITATION_UNAVAILABLE');
-      const invitation = (
-        await pool.query(
-          'select role from mosque_private.invitations where token_hash=$1',
-          [Buffer.from(hash(input.invitationToken), 'hex')],
-        )
-      ).rows[0];
-      const value = credential(input, invitation.role);
-      const id = randomUUID();
-      await pool.query(
-        'insert into auth.users(id,email,pin_hash,credential_role) values($1,$2,$3,$4)',
-        [id, email, await pinHash(value), invitation.role],
-      );
-      await sendLink(id, email, 'signup');
-      return json(
-        {
-          message:
-            'Open the local email inbox at localhost:8025 to confirm your account.',
-        },
-        202,
+      await limit('registration:' + hash(input.invitationToken), 5);
+      let currentUserId: string | undefined;
+      try {
+        currentUserId = (await identity(request)).user_id;
+      } catch (error) {
+        if (!(error instanceof ApiError && error.status === 401)) throw error;
+      }
+      const result = await registerInvitation(input, currentUserId);
+      return sessionCookie(
+        json({ joined: true, destination: result.destination }),
+        result.session.token,
+        result.session.seconds,
       );
     }
     if (path === 'auth/recover' && post) {
@@ -207,34 +219,75 @@ export async function handle(request: Request): Promise<Response> {
         })
         .parse(await bodyJson(request));
       await limit('confirm', 50);
-      const result = await pool.query(
-        'delete from auth.links where hash=$1 and type=$2 and expires_at>now() returning user_id',
-        [hash(input.tokenHash), input.type],
-      );
-      if (!result.rowCount) throw new ApiError(400, 'LINK_EXPIRED_OR_INVALID');
-      const id = result.rows[0].user_id;
-      await pool.query(
-        'update auth.users set email_confirmed_at=coalesce(email_confirmed_at,now()) where id=$1',
-        [id],
-      );
-      const s = await newSession(id, input.type === 'recovery');
-      const account = (
-        await pool.query(
-          'select email,credential_role from auth.users where id=$1',
+      const db = await pool.connect();
+      try {
+        await db.query('begin');
+        const result = await db.query(
+          'delete from auth.links where hash=$1 and type=$2 and expires_at>now() returning user_id',
+          [hash(input.tokenHash), input.type],
+        );
+        if (!result.rowCount)
+          throw new ApiError(400, 'LINK_EXPIRED_OR_INVALID');
+        const id = result.rows[0].user_id;
+        if (input.type === 'signup') {
+          try {
+            const current = await identity(request);
+            if (current.user_id !== id)
+              throw new ApiError(409, 'INVITATION_ACCOUNT_MISMATCH');
+          } catch (error) {
+            if (!(error instanceof ApiError && error.status === 401))
+              throw error;
+          }
+        }
+        await db.query(
+          'update auth.users set email_confirmed_at=coalesce(email_confirmed_at,now()) where id=$1',
           [id],
-        )
-      ).rows[0];
-      return sessionCookie(
-        json({
-          ok: true,
-          identifier: account.email,
-          method: method(account.credential_role),
-        }),
-        s.token,
-        s.seconds,
-      );
+        );
+        const destination =
+          input.type === 'signup'
+            ? await completeConfirmedInvitation(db, id)
+            : null;
+        const account = (
+          await db.query(
+            'select email,credential_role from auth.users where id=$1',
+            [id],
+          )
+        ).rows[0];
+        const s = await newSession(id, input.type === 'recovery', false, db);
+        await db.query('commit');
+        return sessionCookie(
+          json({
+            ok: true,
+            identifier: account.email,
+            method: method(account.credential_role),
+            destination,
+          }),
+          s.token,
+          s.seconds,
+        );
+      } catch (error) {
+        await db.query('rollback');
+        throw error;
+      } finally {
+        db.release();
+      }
     }
     const user = await identity(request);
+    if (path === 'auth/invitation/resume' && post) {
+      const db = await pool.connect();
+      try {
+        await db.query('begin');
+        const destination = await completeConfirmedInvitation(db, user.user_id);
+        if (!destination) throw new ApiError(410, 'INVITATION_UNAVAILABLE');
+        await db.query('commit');
+        return json({ destination });
+      } catch (error) {
+        await db.query('rollback');
+        throw error;
+      } finally {
+        db.release();
+      }
+    }
     if (path === 'mosque' && post) {
       const input = mosqueDetailsSchema.parse(await bodyJson(request, 720000));
       await asUser(user, (db) =>
@@ -376,13 +429,48 @@ export async function handle(request: Request): Promise<Response> {
     }
     if (path === 'command' && post) {
       const id = z.uuid().parse(request.headers.get('idempotency-key'));
-      const body = commandSchema.parse(await bodyJson(request));
+      let body = commandSchema.parse(await bodyJson(request));
+      if (body.type === 'invite') {
+        const { type, ...input } = body;
+        body = { type, ...invitationInput.parse(input) };
+      }
+      if (body.type === 'update-member') {
+        const memberId = body.id;
+        const target = await asUser(
+          user,
+          async (db) =>
+            (
+              await db.query(
+                `select p.role from public.mosque_profiles p where p.id=$1
+                 and mosque_private.allowed(case p.role when 'member' then 'members' else 'administrators' end)
+                 and p.role <> 'super-admin'
+                 and (p.role <> 'owner' or exists(select 1 from public.mosque_profiles me where me.id=auth.uid() and me.role='super-admin'))`,
+                [memberId],
+              )
+            ).rows[0],
+        );
+        if (!target) throw new ApiError(403, 'PERMISSION_OR_MFA_REQUIRED');
+        body = {
+          type: body.type,
+          id: body.id,
+          ...profileInput(target.role).parse(body),
+        };
+      }
       const token =
         body.type === 'invite' ? signed(`invite:${user.user_id}:${id}`) : null;
       const r = await asUser(user, (db) =>
         db.query('select mosque_command($1,$2) result', [
           id,
-          JSON.stringify(token ? { ...body, token } : body),
+          JSON.stringify(
+            token
+              ? {
+                  ...body,
+                  email:
+                    body.type === 'invite' ? body.email || null : undefined,
+                  token,
+                }
+              : body,
+          ),
         ]),
       );
       return json(
@@ -473,6 +561,15 @@ export async function handle(request: Request): Promise<Response> {
     if (e instanceof ApiError) return json({ error: e.code }, e.status);
     if (e instanceof z.ZodError) return json({ error: 'INVALID_INPUT' }, 400);
     const code = (e as { code?: string }).code;
+    if (code === '22023' && (e as Error).message === 'Insufficient balance')
+      return json({ error: 'INSUFFICIENT_BALANCE' }, 400);
+    if (code === '23505') {
+      const message = (e as Error).message;
+      if (message.includes('Phone number already'))
+        return json({ error: 'PHONE_IN_USE' }, 409);
+      if (message.includes('Invitation or member already'))
+        return json({ error: 'EMAIL_IN_USE' }, 409);
+    }
     const mapped: Record<string, [number, string]> = {
       '42501': [403, 'PERMISSION_OR_MFA_REQUIRED'],
       '23505': [409, 'CONFLICT'],
