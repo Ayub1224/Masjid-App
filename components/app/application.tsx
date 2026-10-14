@@ -40,6 +40,7 @@ const routePowers: Record<string, Permission> = {
   '/admin/news': 'news',
   '/admin/receiving': 'receiving',
 };
+import { ChangePinButton } from '@/features/mosque/change-pin';
 export function Application({ path }: { path: string }) {
   const query = useMosqueData();
   const { role, session, logout, loading } = useIdentity();
@@ -281,6 +282,7 @@ export function Application({ path }: { path: string }) {
               Sign out
             </Button>
             <Feedback message={signOutError} error />
+            {role === 'member' && <ChangePinButton />}
           </>
         );
         break;

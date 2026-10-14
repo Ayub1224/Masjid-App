@@ -2,13 +2,22 @@ import { writeFileSync } from 'node:fs';
 import { z } from 'zod';
 import { mosqueDetailsSchema } from '../lib/mosque-details.ts';
 import {
+  bulkMembersInput,
+  bulkRemoveInput,
+  changePinInput,
+} from '../lib/bulk-members.ts';
+import {
   commandSchema,
   credentials,
   registration,
   fileRequest,
 } from '../lib/server/validation.ts';
 const jsonSchema = (schema: z.ZodType) =>
-  z.toJSONSchema(schema, { target: 'draft-2020-12', unrepresentable: 'any' });
+  z.toJSONSchema(schema, {
+    target: 'draft-2020-12',
+    unrepresentable: 'any',
+    io: 'input',
+  });
 const object = (properties: Record<string, unknown>) => ({
   type: 'object',
   properties,
@@ -83,11 +92,55 @@ function add(
   };
 }
 add('mosque', 'get', 'Read mosque details', undefined, { public: true });
+const bulkOptions = {
+  description:
+    'Local PostgreSQL backend. Requires members permission (owner also requires MFA). Atomic batch of 1–100 members. Retry unchanged requests with the same Idempotency-Key. Removal deactivates access and preserves financial history.',
+  parameters: [
+    {
+      name: 'Idempotency-Key',
+      in: 'header',
+      required: true,
+      schema: { type: 'string', format: 'uuid' },
+    },
+  ],
+  response: object({
+    count: { type: 'integer' },
+    ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+  }),
+};
+add(
+  'members/bulk-add',
+  'post',
+  'Create members with temporary four-digit PINs',
+  jsonSchema(bulkMembersInput),
+  bulkOptions,
+);
+add(
+  'members/bulk-remove',
+  'post',
+  'Deactivate selected members and revoke sessions',
+  jsonSchema(bulkRemoveInput),
+  bulkOptions,
+);
+add(
+  'auth/change-pin',
+  'post',
+  'Change member PIN and rotate all sessions',
+  jsonSchema(changePinInput),
+  {
+    description:
+      'Local PostgreSQL backend. Requires the current PIN and a different new four-digit PIN other than 0000. Temporary accounts can only read their identity, sign out, or change their PIN until this succeeds.',
+  },
+);
 add('mosque', 'post', 'Save mosque details', jsonSchema(mosqueDetailsSchema));
 
 add('settings', 'get', 'Public UI configuration', undefined, {
   public: true,
-  response: object({ demo: { type: 'boolean' }, turnstileSiteKey: str }),
+  response: object({
+    local: { type: 'boolean' },
+    bulkMembers: { type: 'boolean' },
+    turnstileSiteKey: str,
+  }),
 });
 add('public', 'get', 'Published news and mosque prayer timetable', undefined, {
   public: true,
@@ -302,21 +355,33 @@ add(
   'Ledger totals and monthly aggregate movements',
   undefined,
   {
-    response: object({
-      balance: object({
-        bankPaise: { type: 'integer' },
-        cashPaise: { type: 'integer' },
-      }),
-      months: {
-        type: 'array',
-        items: object({
-          month: str,
-          receipts: { type: 'integer' },
-          expenses: { type: 'integer' },
-          adjustments: { type: 'integer' },
+    description:
+      'Members receive mosque-wide verified monthly collection totals only. Authorized finance administrators also receive recorded bank/cash balances, expenses and reversal adjustments.',
+    response: {
+      oneOf: [
+        object({
+          months: {
+            type: 'array',
+            items: object({ month: str, receipts: { type: 'integer' } }),
+          },
         }),
-      },
-    }),
+        object({
+          balance: object({
+            bankPaise: { type: 'integer' },
+            cashPaise: { type: 'integer' },
+          }),
+          months: {
+            type: 'array',
+            items: object({
+              month: str,
+              receipts: { type: 'integer' },
+              expenses: { type: 'integer' },
+              adjustments: { type: 'integer' },
+            }),
+          },
+        }),
+      ],
+    },
   },
 );
 add(

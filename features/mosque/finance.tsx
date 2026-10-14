@@ -8,10 +8,12 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { balances, money, type DemoState } from '@/lib/data/domain';
-import { Disclosure, PageTitle } from '@/components/app/primitives';
+import { Disclosure, PageTitle, Panel } from '@/components/app/primitives';
+import { useIdentity } from '@/components/app/providers';
 import { usePreferences } from '@/components/app/preferences';
 export function Finance({ data }: { data: DemoState }) {
   const { t } = usePreferences();
+  const { role } = useIdentity();
   const b = balances(data);
   const [month, setMonth] = useState(
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' })
@@ -34,6 +36,43 @@ export function Finance({ data }: { data: DemoState }) {
   const adjustments = Number(
     data.monthly?.find((m) => m.month === month)?.adjustments ?? 0,
   );
+  if (role === 'member')
+    return (
+      <>
+        <PageTitle
+          title={t('Monthly collections', 'मासिक संग्रह')}
+          description={t(
+            'Verified contributions from the whole community.',
+            'पूरे समुदाय के सत्यापित योगदान।',
+          )}
+        />
+        <Panel className="space-y-6">
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            {t('Month', 'महीना')}
+            <input
+              type="month"
+              value={month}
+              onChange={(event) => setMonth(event.target.value)}
+              className="h-12 w-full rounded-lg border bg-background px-3"
+            />
+          </label>
+          <div>
+            <p className="text-sm text-muted-foreground">
+              {t('Monthly collection total', 'मासिक संग्रह की कुल राशि')}
+            </p>
+            <p className="mt-2 text-4xl font-medium tabular-nums">
+              {money(receipts)}
+            </p>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {t(
+              'Only verified contributions are included. Pending, rejected and reversed payments are excluded.',
+              'केवल सत्यापित योगदान शामिल हैं। लंबित, अस्वीकृत और वापस किए गए भुगतान शामिल नहीं हैं।',
+            )}
+          </p>
+        </Panel>
+      </>
+    );
   return (
     <>
       <PageTitle title={t('Mosque finances', 'मस्जिद का वित्त')} />

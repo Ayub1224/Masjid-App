@@ -174,6 +174,512 @@
                   "latitude",
                   "longitude",
                   "picture"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required or credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission, MFA or origin rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Configuration or service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backend/members/bulk-add": {
+      "post": {
+        "operationId": "members_bulk-add_post",
+        "summary": "Create members with temporary four-digit PINs",
+        "description": "Local PostgreSQL backend. Requires members permission (owner also requires MFA). Atomic batch of 1–100 members. Retry unchanged requests with the same Idempotency-Key. Removal deactivates access and preserves financial history.",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "members": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "phone": {
+                          "type": "string",
+                          "maxLength": 25
+                        },
+                        "address": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "pin": {
+                          "default": "0000",
+                          "type": "string",
+                          "pattern": "^\\d{4}$"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "phone",
+                        "address"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "members"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required or credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission, MFA or origin rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Configuration or service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backend/members/bulk-remove": {
+      "post": {
+        "operationId": "members_bulk-remove_post",
+        "summary": "Deactivate selected members and revoke sessions",
+        "description": "Local PostgreSQL backend. Requires members permission (owner also requires MFA). Atomic batch of 1–100 members. Retry unchanged requests with the same Idempotency-Key. Removal deactivates access and preserves financial history.",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "required": [
+                  "ids"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required or credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission, MFA or origin rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Configuration or service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backend/auth/change-pin": {
+      "post": {
+        "operationId": "auth_change-pin_post",
+        "summary": "Change member PIN and rotate all sessions",
+        "description": "Local PostgreSQL backend. Requires the current PIN and a different new four-digit PIN other than 0000. Temporary accounts can only read their identity, sign out, or change their PIN until this succeeds.",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "currentPin": {
+                    "type": "string",
+                    "pattern": "^\\d{4}$"
+                  },
+                  "pin": {
+                    "type": "string",
+                    "pattern": "^\\d{4}$"
+                  }
+                },
+                "required": [
+                  "currentPin",
+                  "pin"
                 ],
                 "additionalProperties": false
               }
@@ -302,7 +808,10 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "demo": {
+                    "local": {
+                      "type": "boolean"
+                    },
+                    "bulkMembers": {
                       "type": "boolean"
                     },
                     "turnstileSiteKey": {
@@ -602,8 +1111,7 @@
                 "required": [
                   "identifier",
                   "pin",
-                  "captchaToken",
-                  "remember"
+                  "captchaToken"
                 ],
                 "additionalProperties": false
               }
@@ -760,7 +1268,6 @@
                   "identifier",
                   "pin",
                   "captchaToken",
-                  "remember",
                   "invitationToken"
                 ],
                 "additionalProperties": false
@@ -2723,6 +3230,7 @@
       "get": {
         "operationId": "finances_get",
         "summary": "Ledger totals and monthly aggregate movements",
+        "description": "Members receive mosque-wide verified monthly collection totals only. Authorized finance administrators also receive recorded bank/cash balances, expenses and reversal adjustments.",
         "security": [
           {
             "cookieAuth": []
@@ -2737,40 +3245,63 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "balance": {
+                  "oneOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "bankPaise": {
-                          "type": "integer"
-                        },
-                        "cashPaise": {
-                          "type": "integer"
+                        "months": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "month": {
+                                "type": "string"
+                              },
+                              "receipts": {
+                                "type": "integer"
+                              }
+                            }
+                          }
                         }
                       }
                     },
-                    "months": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "month": {
-                            "type": "string"
-                          },
-                          "receipts": {
-                            "type": "integer"
-                          },
-                          "expenses": {
-                            "type": "integer"
-                          },
-                          "adjustments": {
-                            "type": "integer"
+                    {
+                      "type": "object",
+                      "properties": {
+                        "balance": {
+                          "type": "object",
+                          "properties": {
+                            "bankPaise": {
+                              "type": "integer"
+                            },
+                            "cashPaise": {
+                              "type": "integer"
+                            }
+                          }
+                        },
+                        "months": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "month": {
+                                "type": "string"
+                              },
+                              "receipts": {
+                                "type": "integer"
+                              },
+                              "expenses": {
+                                "type": "integer"
+                              },
+                              "adjustments": {
+                                "type": "integer"
+                              }
+                            }
                           }
                         }
                       }
                     }
-                  }
+                  ]
                 }
               }
             }
@@ -3601,8 +4132,6 @@
               "id",
               "title",
               "text",
-              "hindiTitle",
-              "hindiBody",
               "date",
               "published"
             ],
@@ -3911,10 +4440,18 @@
                 "const": "invite"
               },
               "email": {
-                "type": "string",
-                "maxLength": 254,
-                "format": "email",
-                "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email",
+                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  {
+                    "type": "string",
+                    "const": ""
+                  }
+                ]
               },
               "name": {
                 "type": "string",
@@ -3962,10 +4499,7 @@
               "type",
               "email",
               "name",
-              "phone",
-              "address",
-              "role",
-              "permissions"
+              "role"
             ],
             "additionalProperties": false
           },
@@ -4165,8 +4699,6 @@
               "type",
               "title",
               "text",
-              "hindiTitle",
-              "hindiBody",
               "date",
               "published"
             ],

@@ -19,6 +19,7 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { SoftSelect } from './soft-select';
 import { Button } from '@/components/ui/button';
 import { ArrowUpDown, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 export function DataTable<T>({
@@ -45,7 +46,7 @@ export function DataTable<T>({
     initialState: { pagination: { pageSize: 6 } },
   });
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-3.5 size-4 text-muted-foreground" />
         <Input
@@ -56,7 +57,20 @@ export function DataTable<T>({
           className="h-11 bg-card pl-10"
         />
       </div>
-      <div className="overflow-hidden rounded-xl border bg-card">
+      <div className="space-y-4 sm:hidden">
+        <SoftSelect label="Sort records" value={sorting[0] ? `${sorting[0].id}:${sorting[0].desc ? 'desc' : 'asc'}` : ''} onChange={(value) => { const [id, direction] = value.split(':'); setSorting(id ? [{ id, desc: direction === 'desc' }] : []); }} className="w-full">
+          <option value="">Default order</option>
+          {table.getAllLeafColumns().filter((column) => column.getCanSort()).flatMap((column) => ['asc', 'desc'].map((direction) => <option key={`${column.id}:${direction}`} value={`${column.id}:${direction}`}>{typeof column.columnDef.header === 'string' ? column.columnDef.header : column.id} · {direction === 'asc' ? 'ascending' : 'descending'}</option>))}
+        </SoftSelect>
+        {table.getHeaderGroups().flatMap((group) => group.headers).filter((header) => header.column.id === 'select').map((header) => <div key={header.id} className="flex min-h-11 items-center gap-3 px-1">{flexRender(header.column.columnDef.header, header.getContext())}<span className="text-sm">Select matching records</span></div>)}
+        {table.getRowModel().rows.length ? table.getRowModel().rows.map((row) => <article key={row.id} className="neo-surface min-w-0 rounded-xl border bg-card p-4">
+          <dl className="space-y-4">{row.getVisibleCells().map((cell) => <div key={cell.id} className="min-w-0 break-words [overflow-wrap:anywhere]">
+            <dt className={cell.column.id === 'select' ? 'sr-only' : 'mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground'}>{typeof cell.column.columnDef.header === 'string' && cell.column.columnDef.header ? cell.column.columnDef.header : cell.column.id === 'select' ? 'Select record' : 'Actions'}</dt>
+            <dd className="min-w-0 [&>div]:flex-wrap">{flexRender(cell.column.columnDef.cell, cell.getContext())}</dd>
+          </div>)}</dl>
+        </article>) : <p className="rounded-xl border bg-card px-4 py-8 text-center text-muted-foreground">No matching records.</p>}
+      </div>
+      <div className="hidden overflow-hidden rounded-xl border bg-card sm:block">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((g) => (
@@ -114,7 +128,7 @@ export function DataTable<T>({
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
         <span>
           {table.getFilteredRowModel().rows.length} records · Page{' '}
           {table.getState().pagination.pageIndex + 1} of{' '}

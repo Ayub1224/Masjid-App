@@ -38,6 +38,8 @@ import {
 } from '../lib/server/http';
 import { commandSchema, fileRequest } from '../lib/server/validation';
 import { loginInput, credential, method, findAccount } from './credentials';
+import { bulkMembers } from './bulk-members';
+import { changePinInput } from '../lib/bulk-members';
 const origin = process.env.APP_ORIGIN!;
 if (
   origin !== 'http://localhost:3000' &&
@@ -79,7 +81,7 @@ export async function handle(request: Request): Promise<Response> {
       throw new ApiError(405, 'METHOD_NOT_ALLOWED');
     if (post) sameOrigin(request, origin);
     if (path === 'settings' && !post)
-      return json({ local: true, turnstileSiteKey: '' });
+      return json({ local: true, bulkMembers: true, turnstileSiteKey: '' });
     if (path === 'mosque' && !post)
       return json(
         await asUser(
@@ -273,6 +275,67 @@ export async function handle(request: Request): Promise<Response> {
       }
     }
     const user = await identity(request);
+    if (path === 'auth/change-pin' && post) {
+      const input = changePinInput.parse(await bodyJson(request));
+      await limit('change-pin:' + user.user_id, 5);
+      const db = await pool.connect();
+      try {
+        await db.query('begin');
+        const account = (
+          await db.query(
+            "select u.* from auth.users u join mosque_profiles p on p.id=u.id where u.id=$1 and p.active and p.role='member' for update of u",
+            [user.user_id],
+          )
+        ).rows[0];
+        if (!account || !(await pinMatches(input.currentPin, account.pin_hash)))
+          throw new ApiError(403, 'INVALID_CREDENTIALS');
+        if (
+          !(
+            await db.query(
+              'select 1 from auth.sessions where id=$1 and user_id=$2 and not_after>now()',
+              [user.id, user.user_id],
+            )
+          ).rowCount
+        )
+          throw new ApiError(401, 'SIGN_IN_REQUIRED');
+        await db.query(
+          'update auth.users set pin_hash=$1,must_change_pin=false where id=$2',
+          [await pinHash(input.pin), user.user_id],
+        );
+        await db.query('delete from auth.sessions where user_id=$1', [
+          user.user_id,
+        ]);
+        await db.query(
+          "insert into mosque_private.audit(actor,action,target) values($1,'change-pin',$1)",
+          [user.user_id],
+        );
+        const session = await newSession(user.user_id, false, false, db);
+        await db.query('commit');
+        return sessionCookie(
+          json({ ok: true }),
+          session.token,
+          session.seconds,
+        );
+      } catch (error) {
+        await db.query('rollback');
+        throw error;
+      } finally {
+        db.release();
+      }
+    }
+    if (user.must_change_pin && !['me', 'auth/logout'].includes(path))
+      throw new ApiError(403, 'PIN_CHANGE_REQUIRED');
+    if (post && ['members/bulk-add', 'members/bulk-remove'].includes(path)) {
+      await limit('bulk-members:' + user.user_id, 10);
+      return json(
+        await bulkMembers(
+          user,
+          request.headers.get('Idempotency-Key'),
+          await bodyJson(request, 300000),
+          path === 'members/bulk-remove',
+        ),
+      );
+    }
     if (path === 'auth/invitation/resume' && post) {
       const db = await pool.connect();
       try {
@@ -369,16 +432,15 @@ export async function handle(request: Request): Promise<Response> {
       return json({ ok: true });
     }
     if (path === 'me' && !post) {
-      const profile = await asUser(user, (db) =>
-        db.query(
-          `select ${columns.mosque_profiles} from mosque_profiles where id=$1`,
-          [user.user_id],
-        ),
+      const profile = await pool.query(
+        `select ${columns.mosque_profiles} from mosque_profiles where id=$1`,
+        [user.user_id],
       );
       return json({
         profile: profile.rows[0] ?? null,
         userId: user.user_id,
         aal: user.aal,
+        mustChangePin: user.must_change_pin,
       });
     }
     if (path === 'records' && !post) {

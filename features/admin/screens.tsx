@@ -1,5 +1,7 @@
 'use client';
 import { receivingDetails } from '@/lib/receiving-details';
+import { BulkMembers } from './bulk-members';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, invitationLinks, BackendError } from '@/lib/data/api';
 import { RecordActions, OpeningBalance } from './record-actions';
 import { initialPrayers } from '@/config/mosque';
@@ -8,6 +10,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import {
   invitationInput,
+  phoneInputValue,
   paymentPermissions,
 } from '@/lib/administrator-invitation';
 import {
@@ -183,6 +186,15 @@ export function Members({
 }) {
   const action = useMosqueAction();
   const { role: actorRole } = useIdentity();
+  const settings = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api<{ bulkMembers?: boolean }>('settings'),
+  });
+  const supportsBulk = settings.data?.bulkMembers === true;
+  const cache = useQueryClient();
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [removalKey, setRemovalKey] = useState('');
   const [open, setOpen] = useState(false),
     [created, setCreated] = useState(''),
     [editing, setEditing] = useState<Member | null>(null),
@@ -211,6 +223,51 @@ export function Members({
     }
   }
   const cols: ColumnDef<Member, unknown>[] = [
+    ...(!administrators && supportsBulk
+      ? [
+          {
+            id: 'select',
+            enableSorting: false,
+            header: ({ table }) => {
+              const ids = table
+                .getFilteredRowModel()
+                .rows.filter((row) => row.original.status === 'active')
+                .slice(0, 100)
+                .map((row) => row.original.id);
+              return (
+                <Checkbox
+                  aria-label="Select up to 100 matching active members"
+                  checked={
+                    ids.length > 0 &&
+                    ids.every((id) => selectedMembers.includes(id))
+                  }
+                  onCheckedChange={(checked) =>
+                    setSelectedMembers(checked ? ids : [])
+                  }
+                />
+              );
+            },
+            cell: ({ row }) => (
+              <Checkbox
+                aria-label={`Select ${row.original.name}`}
+                disabled={
+                  row.original.status !== 'active' ||
+                  (!selectedMembers.includes(row.original.id) &&
+                    selectedMembers.length >= 100)
+                }
+                checked={selectedMembers.includes(row.original.id)}
+                onCheckedChange={(checked) =>
+                  setSelectedMembers((ids) =>
+                    checked
+                      ? [...ids, row.original.id]
+                      : ids.filter((id) => id !== row.original.id),
+                  )
+                }
+              />
+            ),
+          } satisfies ColumnDef<Member, unknown>,
+        ]
+      : []),
     {
       accessorKey: 'name',
       header: 'Name',
@@ -289,17 +346,29 @@ export function Members({
             : 'Your local community, one person at a time.'
         }
         action={
-          <Button
-            className="h-11"
-            disabled={administrators && occupied >= 5}
-            onClick={() => {
-              setOpen(true);
-              setCreated('');
-            }}
-          >
-            <Plus />
-            {administrators ? 'Add administrator' : 'Add member'}
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            {!administrators && supportsBulk && (
+              <Button
+                variant="outline"
+                className="h-12 gap-2 rounded-xl px-5"
+                onClick={() => setBulkOpen(true)}
+              >
+                <Users className="size-4" />
+                Add bulk members
+              </Button>
+            )}
+            <Button
+              className="h-12 gap-2 rounded-xl px-5"
+              disabled={administrators && occupied >= 5}
+              onClick={() => {
+                setOpen(true);
+                setCreated('');
+              }}
+            >
+              <Plus />
+              {administrators ? 'Add administrator' : 'Add member'}
+            </Button>
+          </div>
         }
       />
       {administrators && (
@@ -334,7 +403,66 @@ export function Members({
           </Panel>
         </div>
       )}
-      <Feedback message={notice} error={noticeError} />
+      {notice && (
+        <div className="mb-6">
+          <Feedback message={notice} error={noticeError} />
+        </div>
+      )}
+      {bulkOpen && !administrators && (
+        <BulkMembers
+          onCancel={() => setBulkOpen(false)}
+          onDone={(count) => {
+            setBulkOpen(false);
+            setNoticeError(false);
+            setNotice(
+              `${count} members added. Share their temporary PINs personally; they will change them at first login.`,
+            );
+          }}
+        />
+      )}
+      {!administrators && selectedMembers.length > 0 && (
+        <div className="my-4 flex flex-wrap items-center gap-3">
+          <span>{selectedMembers.length} selected</span>
+          <Button
+            variant="destructive"
+            onClick={() => setRemovalKey(crypto.randomUUID())}
+          >
+            Remove selected
+          </Button>
+          <Button variant="ghost" onClick={() => setSelectedMembers([])}>
+            Clear selection
+          </Button>
+        </div>
+      )}
+      <Modal
+        open={!!removalKey}
+        onOpenChange={(open) => {
+          if (!open) setRemovalKey('');
+        }}
+        title={`Remove ${selectedMembers.length} members?`}
+        description="This deactivates their access and signs them out. Donation history stays intact. You can reactivate members individually."
+      >
+        <Form
+          submit="Confirm removal"
+          onSubmit={async () => {
+            const result = await api<{ count: number }>(
+              'members/bulk-remove',
+              { ids: selectedMembers },
+              { headers: { 'Idempotency-Key': removalKey } },
+            );
+            setRemovalKey('');
+            setSelectedMembers([]);
+            setNoticeError(false);
+            setNotice(`${result.count} members deactivated.`);
+            await cache.invalidateQueries({ queryKey: ['mosque-data'] });
+          }}
+        >
+          <p>
+            Only active member accounts can be removed here. Owner and
+            administrator accounts are excluded.
+          </p>
+        </Form>
+      </Modal>
       <DataTable
         data={rows}
         columns={cols}
@@ -503,7 +631,12 @@ function InvitationForm({
         maxLength={25}
         placeholder="9876543210 or +91 9876543210"
         error={errors.phone}
-        onChange={() => clearError('phone')}
+        onChange={(event) => {
+          event.currentTarget.value = phoneInputValue(
+            event.currentTarget.value,
+          );
+          clearError('phone');
+        }}
       />
       <Field
         name="address"

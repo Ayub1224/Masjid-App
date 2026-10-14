@@ -12,6 +12,11 @@ export function indianMobile(value: string): string | null {
   const match = /^(?:\+91|91)?([6-9][0-9]{9})$/.exec(compact);
   return match ? `+91${match[1]}` : null;
 }
+// Keep telephone inputs numeric while allowing an optional leading country prefix.
+export function phoneInputValue(value: string): string {
+  const prefix = value.trimStart().startsWith('+') ? '+' : '';
+  return prefix + value.replace(/\D/g, '').slice(0, 12);
+}
 export function profileInput(_role: string) {
   return z
     .object({

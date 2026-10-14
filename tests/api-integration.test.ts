@@ -43,6 +43,37 @@ it('loads administrators without unrelated finance or public requests', async ()
   expect(result.members).toEqual([]);
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
+it('loads member collections without requesting balances, expenses or other records', async () => {
+  const fetcher = vi.fn(async (url: string) => {
+    if (url.endsWith('/api/backend/finances'))
+      return Response.json({
+        months: [{ month: '2026-10', receipts: 125000 }],
+      });
+    throw Error(`Unexpected request: ${url}`);
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const result = await readData(
+    {
+      userId: 'member',
+      aal: 'aal1',
+      profile: {
+        id: 'member',
+        name: 'Member',
+        email: '',
+        phone: '+919876543210',
+        address: 'Durg',
+        role: 'member',
+        active: true,
+        permissions: [],
+      },
+    },
+    '/finances',
+  );
+  expect(result.monthly).toEqual([{ month: '2026-10', receipts: 125000 }]);
+  expect(result.balance).toEqual({ bank: 0, cash: 0, total: 0 });
+  expect(result.expenses).toEqual([]);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
 it('propagates navigation cancellation to requests and stops pagination', async () => {
   const controller = new AbortController();
   const fetcher = vi.fn(
@@ -194,5 +225,8 @@ it('validates PIN input and documents all current command variants', () => {
     commandSchema.options.length,
   );
   expect(spec.openapi).toBe('3.1.0');
-  expect(Object.keys(spec.paths)).toHaveLength(22);
+  expect(Object.keys(spec.paths)).toHaveLength(25);
+  expect(spec.paths).toHaveProperty('/api/backend/members/bulk-add');
+  expect(spec.paths).toHaveProperty('/api/backend/members/bulk-remove');
+  expect(spec.paths).toHaveProperty('/api/backend/auth/change-pin');
 });

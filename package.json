@@ -17,7 +17,7 @@
     "format": "oxfmt",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
-    "api:spec": "node --experimental-strip-types scripts/generate-openapi.ts"
+    "api:spec": "node --import tsx scripts/generate-openapi.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",

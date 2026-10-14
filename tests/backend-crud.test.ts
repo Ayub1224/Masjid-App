@@ -279,14 +279,44 @@ it('limits email and phone PIN attempts together and never reveals identity with
     ).rows[0].email,
   ).toBeNull();
 });
-it('returns mosque-wide totals without exposing other member payment records', async () => {
+it('members receive only monthly verified collections, never balances, expenses or other receipts', async () => {
+  await as(db, ids.admin);
+  const expected = (
+    await db.query<{ total: number }>(
+      "select coalesce(sum(amount_paise),0)::int total from public.mosque_payments where status='verified'",
+    )
+  ).rows[0].total;
+  const adminSummary = (
+    await db.query<{ summary: { balance: { cashPaise: number } } }>(
+      'select public.mosque_financial_summary() as summary',
+    )
+  ).rows[0].summary;
+  expect(adminSummary.balance.cashPaise).toBe(10000);
   await as(db, ids.other);
   expect(
     (await db.query('select * from public.mosque_payments')).rows,
   ).toHaveLength(0);
   const result = await db.query<{
-    summary: { balance: { cashPaise: number }; months: unknown[] };
+    summary: { months: { month: string; receipts: number }[] };
   }>('select public.mosque_financial_summary() as summary');
-  expect(result.rows[0].summary.balance.cashPaise).toBe(10000);
-  expect(result.rows[0].summary.months).toHaveLength(1);
+  expect(result.rows[0].summary).toEqual({
+    months: [{ month: '2026-01', receipts: expected }],
+  });
+  await expect(db.query('select public.mosque_finances()')).rejects.toThrow(
+    'Finance permission required',
+  );
+  expect((await db.query('select * from public.mosque_expenses')).rows).toEqual(
+    [],
+  );
+  expect(
+    (await db.query('select * from public.mosque_balance_checks')).rows,
+  ).toEqual([]);
+  await as(db, ids.member);
+  const own = (
+    await db.query<{ member_id: string }>(
+      'select * from public.mosque_payments',
+    )
+  ).rows;
+  expect(own.length).toBeGreaterThan(0);
+  expect(own.every((row) => row.member_id === ids.member)).toBe(true);
 });

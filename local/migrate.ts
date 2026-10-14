@@ -121,6 +121,22 @@ if (!done.has('local-member-contact-v4')) {
     db.release();
   }
 }
+if (!done.has('local-bulk-members-v1')) {
+  const db = await pool.connect();
+  try {
+    await db.query('begin');
+    await db.query(readFileSync('local/bulk-members.sql', 'utf8'));
+    await db.query(
+      "insert into local_migrations(name) values('local-bulk-members-v1')",
+    );
+    await db.query('commit');
+  } catch (error) {
+    await db.query('rollback');
+    throw error;
+  } finally {
+    db.release();
+  }
+}
 const email = process.env.BOOTSTRAP_EMAIL!;
 const existing = await pool.query('select id from auth.users where email=$1', [
   email,

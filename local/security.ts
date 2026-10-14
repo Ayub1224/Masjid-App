@@ -51,7 +51,7 @@ export async function identity(request: Request): Promise<Identity> {
   if (!token || !/^[a-f0-9]{64}$/.test(token))
     throw new ApiError(401, 'SIGN_IN_REQUIRED');
   const r = await pool.query(
-    `select s.*,coalesce(u.email,u.phone) email from auth.sessions s join auth.users u on u.id=s.user_id left join public.mosque_profiles p on p.id=u.id where token_hash=$1 and not_after>now() and (p.id is null or p.active) and (u.email_confirmed_at is not null or u.activated_at is not null)`,
+    `select s.*,u.must_change_pin,coalesce(u.email,u.phone) email from auth.sessions s join auth.users u on u.id=s.user_id left join public.mosque_profiles p on p.id=u.id where token_hash=$1 and not_after>now() and (p.id is null or p.active) and (u.email_confirmed_at is not null or u.activated_at is not null)`,
     [hash(token)],
   );
   if (!r.rowCount) throw new ApiError(401, 'SIGN_IN_REQUIRED');

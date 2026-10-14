@@ -1,4 +1,5 @@
 'use client';
+import { SoftSelect } from '@/components/app/soft-select';
 import { useIdentity } from '@/components/app/providers';
 /* oxlint-disable next/no-img-element -- User-selected data URLs must remain local previews, without an image optimizer. */
 import Link from 'next/link';
@@ -332,17 +333,17 @@ export function Contributions({ data }: { data: DemoState }) {
           </div>
         </div>
       </Panel>
-      <select
-        aria-label="Filter contributions"
+      <SoftSelect
+        label={t('Filter contributions', 'योगदान छाँटें')}
         value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        className="mb-4 h-11 w-full rounded-lg border bg-card px-3"
+        onChange={setFilter}
+        className="mb-5 h-12 w-full rounded-xl px-4"
       >
         <option value="all">{t('All contributions', 'सभी योगदान')}</option>
         <option value="verified">Verified</option>
         <option value="pending">Pending verification</option>
         <option value="rejected">Rejected</option>
-      </select>
+      </SoftSelect>
       <Accordion className="rounded-xl border bg-card">
         {rows
           .filter((p) => filter === 'all' || p.status === filter)

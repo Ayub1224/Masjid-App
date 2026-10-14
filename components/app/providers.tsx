@@ -9,6 +9,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { PreferencesProvider } from './preferences';
+import { ChangePin } from '@/features/mosque/change-pin';
 import { type Action } from '@/lib/data/repository';
 import type { Role } from '@/lib/data/domain';
 import {
@@ -73,7 +74,15 @@ function Identity({ children }: { children: ReactNode }) {
         logout,
       }}
     >
-      {children}
+      {session.data?.mustChangePin ? (
+        <ChangePin
+          required
+          onDone={() => session.refetch()}
+          onSignOut={logout}
+        />
+      ) : (
+        children
+      )}
     </RoleContext.Provider>
   );
 }
@@ -110,6 +119,7 @@ export function useMosqueData() {
     queryFn: ({ signal }) => readData(session, path ?? 'all', signal),
     enabled:
       !loading &&
+      !session?.mustChangePin &&
       ![
         '/admin/mosque',
         '/settings',

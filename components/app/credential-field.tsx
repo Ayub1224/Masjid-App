@@ -8,10 +8,12 @@ import { InputOTP } from '@/components/ui/input-otp';
 // the visual slots show one digit each without splitting the submitted value.
 export function CredentialField({
   digits,
+  compact = false,
   onChange,
   ...props
 }: Omit<ComponentProps<typeof Field>, 'onChange'> & {
   digits?: number;
+  compact?: boolean;
   onChange?: () => void;
 }) {
   if (!digits) return <Field {...props} onChange={onChange} />;
@@ -35,7 +37,10 @@ export function CredentialField({
         pasteTransformer={(text) => text.replace(/\s/g, '')}
         containerClassName="w-full"
         render={({ slots }) => (
-          <div className="flex w-full max-w-sm gap-2" aria-hidden="true">
+          <div
+            className={`flex w-full gap-2 ${compact ? 'max-w-[216px]' : 'max-w-sm'}`}
+            aria-hidden="true"
+          >
             {slots.map((slot, index) => (
               <div
                 key={index}

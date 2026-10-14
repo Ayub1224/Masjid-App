@@ -28,10 +28,10 @@ export function Brand() {
         )}
       </span>
       <span className="min-w-0">
-        <span className="block font-heading text-lg leading-tight">
+        <span className="block break-words font-heading text-base leading-tight sm:text-lg">
           {data?.name ?? 'Prayer times'}
         </span>
-        <span className="text-xs tracking-wide text-muted-foreground">
+        <span className="mt-1 block line-clamp-2 text-xs tracking-wide text-muted-foreground">
           {data?.address ?? 'Durg · India'}
         </span>
       </span>

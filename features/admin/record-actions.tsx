@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, BackendError } from '@/lib/data/api';
-import { profileInput } from '@/lib/administrator-invitation';
+import { profileInput, phoneInputValue } from '@/lib/administrator-invitation';
 import type { Member, Expense, Notice } from '@/lib/data/domain';
 import { parseAmount } from '@/lib/data/domain';
 import { useIdentity } from '@/components/app/providers';
@@ -210,6 +210,12 @@ export function RecordActions({
                 label="Indian mobile number"
                 name="phone"
                 type="tel"
+                inputMode="tel"
+                onChange={(event) => {
+                  event.currentTarget.value = phoneInputValue(
+                    event.currentTarget.value,
+                  );
+                }}
                 required
                 error={errors.phone}
                 defaultValue={member.phone}

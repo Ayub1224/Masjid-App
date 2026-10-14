@@ -17,6 +17,7 @@ export type Identity = {
   aal: string;
   email: string;
   recovery: boolean;
+  must_change_pin: boolean;
 };
 export async function asUser<T>(
   session: Identity | null,

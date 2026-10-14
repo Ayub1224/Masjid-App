@@ -26,6 +26,11 @@ export class BackendError extends Error {
             'The password or PIN is incorrect. Please try again.',
           PHONE_IN_USE:
             'This mobile number already has an account or pending invitation.',
+          PIN_CHANGE_REQUIRED: 'Change your temporary PIN before continuing.',
+          MOSQUE_DETAILS_REQUIRED:
+            'Save the mosque details before adding members.',
+          ACTIVE_MEMBERS_ONLY:
+            'Select active members only. Refresh if their status changed.',
           EMAIL_IN_USE:
             'This email already has an account or pending invitation.',
           PERMISSION_OR_MFA_REQUIRED:
@@ -46,7 +51,10 @@ export class BackendError extends Error {
             'Enter the password or PIN requested for this account.',
           RATE_LIMITED: 'Too many attempts. Please wait before trying again.',
         } as Record<string, string>
-      )[code] ?? code.replaceAll('_', ' ').toLowerCase(),
+      )[code] ??
+        (/^MEMBER_ROW_\d+_PHONE_IN_USE$/.test(code)
+          ? `Row ${code.split('_')[2]}: this phone number already has an account or pending invitation. No members were added.`
+          : code.replaceAll('_', ' ').toLowerCase()),
     );
   }
 }
@@ -126,7 +134,12 @@ export type Profile = {
   permissions: Member['permissions'];
   active: boolean;
 };
-export type Session = { profile: Profile | null; userId: string; aal: string };
+export type Session = {
+  profile: Profile | null;
+  userId: string;
+  aal: string;
+  mustChangePin?: boolean;
+};
 export async function readSession(): Promise<Session | null> {
   try {
     const session = await api<Session>('me');
@@ -176,6 +189,8 @@ export async function readData(
   signal?: AbortSignal,
 ): Promise<DemoState> {
   const groups: Record<string, string[]> = {
+    '/contributions': ['payments'],
+    '/finances': ['finance'],
     '/super-admin': ['profiles', 'invitations'],
     '/admin/administrators': ['profiles', 'invitations'],
     '/admin/members': ['profiles', 'invitations'],
@@ -188,7 +203,16 @@ export async function readData(
     '/admin/balance': ['checks', 'finance'],
   };
   const needs = (group: string) =>
-    !groups[scope] || groups[scope].includes(group);
+    !(
+      session?.profile?.role === 'member' &&
+      ['expenses', 'checks', 'invitations', 'names', 'audit'].includes(group)
+    ) &&
+    (group !== 'finance' ||
+      session?.profile?.role === 'member' ||
+      session?.profile?.permissions.some((p) =>
+        ['reports', 'expenses', 'record', 'verify'].includes(p),
+      )) &&
+    (!groups[scope] || groups[scope].includes(group));
   const pub = needs('public')
     ? await api<{ prayers: Row[]; news: Row[] }>('public', undefined, {
         signal,
@@ -218,7 +242,7 @@ export async function readData(
       needs('receiving') ? all('mosque_receiving', signal) : [],
       needs('finance')
         ? api<{
-            balance: { bankPaise: number; cashPaise: number };
+            balance?: { bankPaise: number; cashPaise: number };
             months: NonNullable<DemoState['monthly']>;
           }>('finances', undefined, { signal })
         : { balance: { bankPaise: 0, cashPaise: 0 }, months: [] },
@@ -269,12 +293,13 @@ export async function readData(
     note: c.note,
   }));
   state.notices = news.map(notice);
-  state.balance = {
-    bank: Number(finance.balance.bankPaise),
-    cash: Number(finance.balance.cashPaise),
-    total:
-      Number(finance.balance.bankPaise) + Number(finance.balance.cashPaise),
-  };
+  if (finance.balance && session.profile.role !== 'member')
+    state.balance = {
+      bank: Number(finance.balance.bankPaise),
+      cash: Number(finance.balance.cashPaise),
+      total:
+        Number(finance.balance.bankPaise) + Number(finance.balance.cashPaise),
+    };
   state.monthly = finance.months;
   if (receiving[0]) {
     const r = receiving[0];

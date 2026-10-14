@@ -74,7 +74,7 @@ export function AppShell({
         Skip to content
       </a>
       <header className="border-b bg-card">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-5 py-4 sm:px-8">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-4 sm:gap-3 sm:px-8">
           <div className="flex min-w-0 items-center gap-3">
             {admin && (
               <Button
@@ -89,7 +89,7 @@ export function AppShell({
             )}
             <Brand />
           </div>
-          <div className="flex items-center gap-1 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-3">
             <Button
               variant="ghost"
               className="size-11 shrink-0 px-0"
@@ -211,8 +211,8 @@ export function AppShell({
           key={path}
           className={
             admin
-              ? 'min-w-0 px-5 py-8 sm:p-8 lg:p-10'
-              : 'mx-auto w-full max-w-xl px-5 pb-28 pt-7 sm:px-8 sm:pt-10'
+              ? 'min-w-0 px-4 py-6 sm:p-8 lg:p-10'
+              : 'mx-auto w-full min-w-0 max-w-xl px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-6 sm:px-8 sm:pt-10'
           }
         >
           {!admin && canManage && path !== '/invite' && (
@@ -283,7 +283,13 @@ export function AppShell({
             {[
               ['/home', t('Home', 'होम'), Home],
               ['/contributions', t('Contributions', 'योगदान'), HandCoins],
-              ['/finances', t('Finances', 'वित्त'), ChartNoAxesCombined],
+              [
+                '/finances',
+                role === 'member'
+                  ? t('Collections', 'संग्रह')
+                  : t('Finances', 'वित्त'),
+                ChartNoAxesCombined,
+              ],
               ['/profile', t('Profile', 'प्रोफ़ाइल'), UserRound],
             ].map(([href, label, Icon]) => {
               const I = Icon as typeof Home;
